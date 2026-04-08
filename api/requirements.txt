@@ -1,0 +1,25 @@
+# API
+fastapi
+uvicorn[standard]
+
+# Database
+sqlalchemy
+geoalchemy2
+psycopg2-binary
+alembic
+
+# Validation
+pydantic
+pydantic-settings
+
+# Cache
+redis
+
+# Background jobs
+celery[redis]
+
+# HTTP client (for external APIs)
+httpx
+
+# Env
+python-dotenv
