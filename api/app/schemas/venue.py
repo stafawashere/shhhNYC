@@ -24,6 +24,8 @@ class VenueResponse(BaseModel):
     kid_friendly: Optional[bool] = None
     price_tier: Optional[int] = None
     google_place_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class ScoreBreakdown(BaseModel):
