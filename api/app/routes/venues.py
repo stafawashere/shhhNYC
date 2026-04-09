@@ -7,8 +7,10 @@ from geoalchemy2.functions import ST_DWithin, ST_MakePoint, ST_Distance
 from geoalchemy2.shape import to_shape
 from app.db.session import get_db
 from app.models.venue import Venue
+from app.models.user_signal import UserSignal
 from app.scoring.composite import quiet_score
 from app.schemas.venue import VenueWithScore, ScoreResponse
+from app.schemas.requests import SubmitSignalRequest
 
 router = APIRouter(prefix="/venues", tags=["venues"])
 
@@ -42,9 +44,13 @@ def get_nearby_venues(lat: float, lng: float, radius: float = 0.5, limit: int = 
     return [{"venue": venue_to_dict(v), "score": quiet_score(db, v)} for v in venues]
 
 
-@router.get("/search")
+@router.get("/search", response_model=list[VenueWithScore])
 def search_venues(q: str, neighborhood: str | None = None, db: Session = Depends(get_db)):
-    pass
+    query = db.query(Venue).filter(Venue.name.ilike(f"%{q}%"))
+    if neighborhood:
+        query = query.filter(Venue.neighborhood == neighborhood)
+    venues = query.limit(20).all()
+    return [{"venue": venue_to_dict(v), "score": quiet_score(db, v)} for v in venues]
 
 
 @router.get("/{venue_id}", response_model=VenueWithScore)
@@ -65,5 +71,18 @@ def predict_venue(venue_id: str, day: int, hour: int, db: Session = Depends(get_
 
 
 @router.post("/{venue_id}/signal")
-def submit_signal(venue_id: str, db: Session = Depends(get_db)):
-    pass
+def submit_signal(venue_id: str, body: SubmitSignalRequest, db: Session = Depends(get_db)):
+    venue = db.query(Venue).filter(Venue.id == venue_id).first()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+    if not 1 <= body.noise_rating <= 5:
+        raise HTTPException(status_code=422, detail="noise_rating must be between 1 and 5")
+    signal = UserSignal(
+        venue_id=venue_id,
+        noise_rating=body.noise_rating,
+        headcount_est=body.headcount_est,
+        notes=body.notes,
+    )
+    db.add(signal)
+    db.commit()
+    return {"status": "ok"}

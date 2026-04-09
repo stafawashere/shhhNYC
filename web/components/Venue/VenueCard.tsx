@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { VenueWithScore } from "@/lib/api";
 
 interface Props {
@@ -69,11 +70,21 @@ export default function VenueCard({ data, onClose }: Props) {
             </div>
          </div>
 
-         <div className="mt-3 flex gap-3 text-xs text-gray-500">
-            {venue.wifi_quality && <span>WiFi: {venue.wifi_quality}</span>}
-            {venue.has_outlets && <span>· Outlets</span>}
-            {venue.serves_food && <span>· Food</span>}
-            {venue.price_tier && <span>· {"$".repeat(venue.price_tier)}</span>}
+         <div className="mt-3 flex items-center justify-between">
+            <div className="flex gap-3 text-xs text-gray-500">
+               {venue.wifi_quality && <span>WiFi: {venue.wifi_quality}</span>}
+               {venue.has_outlets && <span>· Outlets</span>}
+               {venue.serves_food && <span>· Food</span>}
+               {venue.price_tier && (
+                  <span>· {"$".repeat(venue.price_tier)}</span>
+               )}
+            </div>
+            <Link
+               href={`/venue/${venue.id}`}
+               className="text-xs font-medium text-gray-900 hover:underline shrink-0"
+            >
+               View details →
+            </Link>
          </div>
       </div>
    );
