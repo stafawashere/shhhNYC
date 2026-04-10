@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef } from "react";
 import Map, { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { VenueWithScore } from "@/lib/api";
@@ -12,31 +12,31 @@ interface Props {
    loading?: boolean;
    centerLat?: number;
    centerLng?: number;
+   selected: VenueWithScore | null;
+   onSelect: (v: VenueWithScore | null) => void;
 }
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
-const CARD_HEIGHT_DEG = 0.008; // approx degrees to pan down so marker stays above card
+const CARD_HEIGHT_DEG = 0.008;
 
 export default function MapView({
    venues,
    loading = false,
    centerLat = 40.7282,
    centerLng = -73.9973,
+   selected,
+   onSelect,
 }: Props) {
    const mapRef = useRef<MapRef>(null);
-   const [selected, setSelected] = useState<VenueWithScore | null>(null);
 
    const handleMarkerClick = useCallback((venue: VenueWithScore) => {
-      setSelected(venue);
+      onSelect(venue);
       const lat = venue.venue.lat;
       const lng = venue.venue.lng;
       if (lat && lng && mapRef.current) {
-         mapRef.current.easeTo({
-            center: [lng, lat - CARD_HEIGHT_DEG],
-            duration: 350,
-         });
+         mapRef.current.easeTo({ center: [lng, lat - CARD_HEIGHT_DEG], duration: 350 });
       }
-   }, []);
+   }, [onSelect]);
 
    return (
       <div className="relative w-full h-full">
@@ -80,7 +80,7 @@ export default function MapView({
          )}
 
          {selected && (
-            <VenueCard data={selected} onClose={() => setSelected(null)} />
+            <VenueCard data={selected} onClose={() => onSelect(null)} />
          )}
       </div>
    );

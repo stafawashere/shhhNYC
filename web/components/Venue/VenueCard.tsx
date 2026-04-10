@@ -28,7 +28,15 @@ export default function VenueCard({ data, onClose }: Props) {
    const colors = labelColors[score.label] ?? { badge: "bg-zinc-700 text-zinc-300", bar: "bg-zinc-400" };
 
    return (
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-5 z-10">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm rounded-2xl p-5 z-10"
+         style={{
+            backgroundColor: "rgba(24,24,27,0.75)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(63,63,70,0.6)",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
+         }}
+      >
          <button
             onClick={onClose}
             className="absolute top-3 right-3 p-1 rounded-full text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
@@ -61,7 +69,7 @@ export default function VenueCard({ data, onClose }: Props) {
                const val = score.breakdown[key];
                const pct = Math.round((val / max) * 100);
                return (
-                  <div key={key} className="bg-zinc-800 rounded-lg p-2">
+                  <div key={key} className="rounded-lg p-2" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>
                      <div className="font-bold text-zinc-100">{val.toFixed(0)}<span className="text-zinc-500 font-normal">/{max}</span></div>
                      <div className="text-zinc-500 mt-0.5">{label}</div>
                      <div className="mt-1 h-1 rounded-full bg-zinc-700 overflow-hidden">
@@ -74,10 +82,10 @@ export default function VenueCard({ data, onClose }: Props) {
 
          <div className="mt-3 flex items-center justify-between">
             <div className="flex gap-2 text-xs flex-wrap">
-               {venue.wifi_quality && <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">WiFi: {venue.wifi_quality}</span>}
-               {venue.has_outlets && <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">Outlets</span>}
-               {venue.serves_food && <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">Food</span>}
-               {venue.price_tier && <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">{"$".repeat(venue.price_tier)}</span>}
+               {venue.wifi_quality && <span className="text-zinc-400 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>WiFi: {venue.wifi_quality}</span>}
+               {venue.has_outlets && <span className="text-zinc-400 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>Outlets</span>}
+               {venue.serves_food && <span className="text-zinc-400 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>Food</span>}
+               {venue.price_tier && <span className="text-zinc-400 px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>{"$".repeat(venue.price_tier)}</span>}
             </div>
             <Link
                href={`/venue/${venue.id}`}
