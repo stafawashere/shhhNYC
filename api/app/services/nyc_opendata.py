@@ -1,17 +1,11 @@
 import httpx
 from datetime import date, timedelta, datetime, timezone
 
-# DOB NOW: Build – Job Filings (has text lat/lng, no within_circle support)
-_CONSTRUCTION_URL = "https://data.cityofnewyork.us/resource/w9ak-ipjd.json"
-
-# NYC Permitted Event Information (no coordinates — borough filter only)
-_EVENTS_URL = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json"
-
-# 311 Service Requests — only dataset with a Point column + within_circle support
-_NOISE_311_URL = "https://data.cityofnewyork.us/resource/erm2-nwe9.json"
-
+_CONSTRUCTION_URL = "https://data.cityofnewyork.us/resource/w9ak-ipjd.json" # DOB NOW: Build – Job Filings (has text lat/lng, no within_circle support)
+_EVENTS_URL = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json" # NYC Permitted Event Information (no coordinates — borough filter only)
+_NOISE_311_URL = "https://data.cityofnewyork.us/resource/erm2-nwe9.json" # 311 Service Requests — only dataset with a Point column + within_circle support
 _TIMEOUT = 15
-_BBOX_DEG = 0.003  # ~300m bounding box half-width in degrees
+_BBOX_DEG = 0.003
 
 
 def _dist_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -19,7 +13,6 @@ def _dist_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 def get_active_construction(lat: float, lng: float, radius_m: float = 150) -> list[dict]:
-    # w9ak-ipjd has text lat/lng — use bounding box, then filter by radius in Python
     params = {
         "$limit": 100,
         "$where": (
@@ -51,7 +44,6 @@ def get_active_construction(lat: float, lng: float, radius_m: float = 150) -> li
 
 
 def get_street_events(event_date: date | None = None) -> list[dict]:
-    # tvpp-9vvx has no coordinates — filter by borough + active date only
     if event_date is None:
         event_date = date.today()
 
@@ -75,7 +67,6 @@ def get_street_events(event_date: date | None = None) -> list[dict]:
 
 
 def get_nearby_noise_complaints(lat: float, lng: float, radius_m: float = 300, days: int = 7) -> list[dict]:
-    # erm2-nwe9 is the only dataset with a Point column — supports within_circle()
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     params = {
         "$limit": 20,
