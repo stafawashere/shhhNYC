@@ -1,5 +1,7 @@
 "use client";
 
+import { X } from "lucide-react";
+
 export interface Filters {
    wifi: string;
    outlets: boolean;
@@ -10,57 +12,83 @@ export interface Filters {
 interface Props {
    filters: Filters;
    neighborhoods: string[];
+   matchCount: number;
+   totalCount: number;
    onChange: (filters: Filters) => void;
 }
 
-export default function FilterBar({ filters, neighborhoods, onChange }: Props) {
+const DEFAULT_FILTERS: Filters = { wifi: "", outlets: false, food: false, neighborhood: "" };
+
+function hasActiveFilters(f: Filters) {
+   return f.wifi || f.outlets || f.food || f.neighborhood;
+}
+
+function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+   return (
+      <button
+         onClick={onClick}
+         className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap ${
+            active
+               ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+               : "bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:border-zinc-500"
+         }`}
+      >
+         {children}
+      </button>
+   );
+}
+
+function Select({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+   return (
+      <select
+         className={`w-full px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+            value
+               ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+               : "bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:border-zinc-500"
+         }`}
+         value={value}
+         onChange={(e) => onChange(e.target.value)}
+      >
+         {children}
+      </select>
+   );
+}
+
+export default function FilterBar({ filters, neighborhoods, matchCount, totalCount, onChange }: Props) {
    const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
 
    return (
-      <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-gray-100 text-sm flex-wrap">
-         <select
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 bg-white"
-            value={filters.neighborhood}
-            onChange={(e) => set({ neighborhood: e.target.value })}
-         >
+      <div className="flex flex-col gap-2">
+         <Select value={filters.neighborhood} onChange={(v) => set({ neighborhood: v })}>
             <option value="">All neighborhoods</option>
-            {neighborhoods.map((n) => (
-               <option key={n} value={n}>
-                  {n}
-               </option>
-            ))}
-         </select>
+            {neighborhoods.map((n) => <option key={n} value={n}>{n}</option>)}
+         </Select>
 
-         <select
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-gray-700 bg-white"
-            value={filters.wifi}
-            onChange={(e) => set({ wifi: e.target.value })}
-         >
+         <Select value={filters.wifi} onChange={(v) => set({ wifi: v })}>
             <option value="">Any WiFi</option>
             <option value="fair">Fair+</option>
             <option value="good">Good+</option>
             <option value="excellent">Excellent</option>
-         </select>
+         </Select>
 
-         <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
-            <input
-               type="checkbox"
-               checked={filters.outlets}
-               onChange={(e) => set({ outlets: e.target.checked })}
-               className="rounded"
-            />
-            Outlets
-         </label>
+         <div className="flex gap-2">
+            <Pill active={filters.outlets} onClick={() => set({ outlets: !filters.outlets })}>Outlets</Pill>
+            <Pill active={filters.food} onClick={() => set({ food: !filters.food })}>Food</Pill>
+         </div>
 
-         <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer">
-            <input
-               type="checkbox"
-               checked={filters.food}
-               onChange={(e) => set({ food: e.target.checked })}
-               className="rounded"
-            />
-            Food
-         </label>
+         {hasActiveFilters(filters) && (
+            <button
+               onClick={() => onChange(DEFAULT_FILTERS)}
+               className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium text-red-400 border border-red-900 hover:bg-red-950 transition-colors w-full"
+            >
+               <X size={11} />
+               Clear filters
+            </button>
+         )}
+
+         {matchCount !== totalCount && (
+            <p className="text-xs text-zinc-500 text-center">{matchCount} of {totalCount} venues</p>
+         )}
       </div>
    );
 }

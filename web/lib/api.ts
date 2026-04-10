@@ -58,3 +58,16 @@ export async function getVenue(id: string): Promise<VenueWithScore> {
    if (!res.ok) throw new Error("Venue not found");
    return res.json();
 }
+
+export async function getVenueHourly(id: string, day?: number): Promise<{ day_of_week: number; current_hour: number; slots: { hour: number; busyness: number }[] }> {
+   const url = day !== undefined ? `${API_BASE}/venues/${id}/hourly?day=${day}` : `${API_BASE}/venues/${id}/hourly`;
+   const res = await fetch(url);
+   if (!res.ok) throw new Error("Hourly fetch failed");
+   return res.json();
+}
+
+export async function getVenueDebug(id: string): Promise<Record<string, unknown>> {
+   const res = await fetch(`${API_BASE}/venues/${id}/debug`);
+   if (!res.ok) throw new Error("Debug fetch failed");
+   return res.json();
+}

@@ -24,67 +24,69 @@ const DEFAULT_FILTERS: Filters = {
 
 export default function Home() {
    const [venues, setVenues] = useState<VenueWithScore[]>([]);
+   const [loading, setLoading] = useState(true);
    const [error, setError] = useState<string | null>(null);
    const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
 
    useEffect(() => {
+      setLoading(true);
       getNearbyVenues(DEFAULT_LAT, DEFAULT_LNG, 5)
          .then(setVenues)
-         .catch(() => setError("Could not load venues"));
+         .catch(() => setError("Could not load venues"))
+         .finally(() => setLoading(false));
    }, []);
 
    const neighborhoods = useMemo(
-      () =>
-         Array.from(
-            new Set(venues.map((v) => v.venue.neighborhood).filter(Boolean)),
-         ) as string[],
+      () => Array.from(new Set(venues.map((v) => v.venue.neighborhood).filter(Boolean))) as string[],
       [venues],
    );
 
    const filtered = useMemo(() => {
       return venues.filter((v) => {
          const { venue } = v;
-         if (filters.neighborhood && venue.neighborhood !== filters.neighborhood)
-            return false;
+         if (filters.neighborhood && venue.neighborhood !== filters.neighborhood) return false;
          if (filters.outlets && !venue.has_outlets) return false;
          if (filters.food && !venue.serves_food) return false;
          if (filters.wifi && venue.wifi_quality) {
-            if (WIFI_RANK[venue.wifi_quality] < WIFI_RANK[filters.wifi])
-               return false;
+            if (WIFI_RANK[venue.wifi_quality] < WIFI_RANK[filters.wifi]) return false;
          }
          return true;
       });
    }, [venues, filters]);
 
    return (
-      <div className="w-screen h-screen flex flex-col">
-         <header className="px-5 py-3 bg-white border-b border-gray-100 flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight text-gray-900">
-               ShhhNYC
-            </h1>
-            <span className="text-sm text-gray-400">
-               Quiet workspaces in New York City
-            </span>
-         </header>
+      <div className="w-screen h-screen relative bg-zinc-950">
+         {error ? (
+            <div className="flex items-center justify-center h-full text-zinc-500">{error}</div>
+         ) : (
+            <MapView
+               venues={filtered}
+               loading={loading}
+               centerLat={DEFAULT_LAT}
+               centerLng={DEFAULT_LNG}
+            />
+         )}
 
-         <FilterBar
-            filters={filters}
-            neighborhoods={neighborhoods}
-            onChange={setFilters}
-         />
-
-         <div className="flex-1 relative">
-            {error ? (
-               <div className="flex items-center justify-center h-full text-gray-500">
-                  {error}
-               </div>
-            ) : (
-               <MapView
-                  venues={filtered}
-                  centerLat={DEFAULT_LAT}
-                  centerLng={DEFAULT_LNG}
-               />
-            )}
+         {/* floating glass panel */}
+         <div className="absolute top-4 left-4 z-20 w-64 rounded-2xl bg-zinc-900/80 backdrop-blur-md border border-zinc-700/50 shadow-2xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+               <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="text-emerald-400 shrink-0">
+                  <rect x="1" y="7" width="2" height="6" rx="1" fill="currentColor" opacity="0.5"/>
+                  <rect x="5" y="4" width="2" height="12" rx="1" fill="currentColor" opacity="0.7"/>
+                  <rect x="9" y="2" width="2" height="16" rx="1" fill="currentColor"/>
+                  <rect x="13" y="4" width="2" height="12" rx="1" fill="currentColor" opacity="0.7"/>
+                  <rect x="17" y="7" width="2" height="6" rx="1" fill="currentColor" opacity="0.5"/>
+               </svg>
+               <span className="text-sm font-bold text-zinc-50 tracking-tight">ShhhNYC</span>
+               <span className="text-xs text-zinc-500 ml-auto">{filtered.length} spots</span>
+            </div>
+            <FilterBar
+               filters={filters}
+               neighborhoods={neighborhoods}
+               matchCount={filtered.length}
+               totalCount={venues.length}
+               onChange={setFilters}
+            />
          </div>
       </div>
    );

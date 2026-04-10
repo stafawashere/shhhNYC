@@ -16,5 +16,9 @@ export default async function VenuePage({ params }: Props) {
       notFound();
    }
 
-   return <VenueDetail data={data} />;
+   return (
+      <div className="min-h-screen bg-zinc-950">
+         <VenueDetail data={data} />
+      </div>
+   );
 }
