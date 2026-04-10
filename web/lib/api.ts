@@ -71,3 +71,56 @@ export async function getVenueDebug(id: string): Promise<Record<string, unknown>
    if (!res.ok) throw new Error("Debug fetch failed");
    return res.json();
 }
+
+export interface VenueWarning {
+   type: "construction" | "noise_complaints" | "event";
+   severity: "high" | "medium" | "low";
+   title: string;
+   detail: string;
+}
+
+export async function getVenueWarnings(id: string): Promise<VenueWarning[]> {
+   const res = await fetch(`${API_BASE}/venues/${id}/warnings`);
+   if (!res.ok) return [];
+   const data = await res.json();
+   return data.warnings ?? [];
+}
+
+export interface ConstructionIncident {
+   lat: number;
+   lng: number;
+   job_type: string;
+   filing_status: string;
+   borough: string;
+   filing_date: string | null;  // NYC DOB dataset has ~5 day publish lag
+}
+
+export interface NoiseIncident {
+   lat: number;
+   lng: number;
+   complaint_type: string;
+   descriptor: string;
+   borough: string;
+   created_date: string | null;  // 311 dataset has ~5 day publish lag
+}
+
+export interface EventIncident {
+   event_name: string;
+   event_type: string;
+   event_borough: string;
+   event_location: string;
+   street_closure_type: string;
+   start_date_time: string;
+}
+
+export interface Incidents {
+   construction: ConstructionIncident[];
+   noise: NoiseIncident[];
+   events: EventIncident[];
+}
+
+export async function getIncidents(): Promise<Incidents> {
+   const res = await fetch(`${API_BASE}/incidents`);
+   if (!res.ok) return { construction: [], noise: [], events: [] };
+   return res.json();
+}

@@ -7,6 +7,7 @@ interface Props {
    data: VenueWithScore;
    lat: number;
    lng: number;
+   scale?: number;
    onClick: () => void;
 }
 
@@ -26,14 +27,14 @@ function scoreLabel(score: number): string {
    return "Very Loud";
 }
 
-export default function VenueMarker({ data, lat, lng, onClick }: Props) {
+export default function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
    const { quiet_score } = data.score;
    const { solid, alpha, border, ring } = scoreStyle(quiet_score);
    const hasLive = data.score.breakdown.live_adjustment !== 0;
 
    return (
       <Marker latitude={lat} longitude={lng} onClick={onClick} anchor="bottom">
-         <div className="group cursor-pointer flex flex-col items-center relative">
+         <div className="group cursor-pointer flex flex-col items-center relative" style={{ transform: `scale(${scale})`, transformOrigin: "bottom center" }}>
             {/* glass pill */}
             <div
                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-transform group-hover:scale-110"

@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException
+from app.services import nyc_opendata
 from sqlalchemy.orm import Session
 from sqlalchemy import cast
 from geoalchemy2 import Geography
@@ -191,6 +192,57 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
             for s in recent_signals
         ],
     }
+
+
+@router.get("/{venue_id}/warnings")
+def get_warnings(venue_id: str, db: Session = Depends(get_db)):
+    venue = db.query(Venue).filter(Venue.id == venue_id).first()
+    if not venue:
+        raise HTTPException(status_code=404, detail="Venue not found")
+
+    pt = to_shape(venue.location)
+    lat, lng = pt.y, pt.x
+
+    warnings = []
+
+    permits = nyc_opendata.get_active_construction(lat, lng, radius_m=150)
+    if permits:
+        job_types = list(dict.fromkeys(
+            p.get("job_type", "").replace("_", " ").title()
+            for p in permits if p.get("job_type")
+        ))
+        label = ", ".join(job_types[:2]) if job_types else "street work"
+        warnings.append({
+            "type": "construction",
+            "severity": "high",
+            "title": f"Active construction nearby",
+            "detail": f"{len(permits)} active permit{'s' if len(permits) > 1 else ''} · {label}",
+        })
+
+    complaints = nyc_opendata.get_nearby_noise_complaints(lat, lng, radius_m=300)
+    if complaints:
+        descriptors = list(dict.fromkeys(
+            c.get("descriptor", "") for c in complaints if c.get("descriptor")
+        ))
+        detail = descriptors[0] if descriptors else "Recent noise activity reported"
+        warnings.append({
+            "type": "noise_complaints",
+            "severity": "medium",
+            "title": f"{len(complaints)} noise complaint{'s' if len(complaints) > 1 else ''} this week",
+            "detail": detail,
+        })
+
+    events = nyc_opendata.get_street_events(date.today())
+    if events:
+        name = events[0].get("event_name") or events[0].get("event_type") or "street event"
+        warnings.append({
+            "type": "event",
+            "severity": "low",
+            "title": "Street event today",
+            "detail": name,
+        })
+
+    return {"warnings": warnings}
 
 
 @router.post("/{venue_id}/signal")

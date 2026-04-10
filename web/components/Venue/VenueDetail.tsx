@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock } from "lucide-react";
-import { VenueWithScore, getVenueDebug, getVenueHourly } from "@/lib/api";
+import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays } from "lucide-react";
+import { VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
 import HourlyChart from "./HourlyChart";
 
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -87,9 +87,11 @@ export default function VenueDetail({ data }: Props) {
 
    const [debug, setDebug] = useState<Record<string, unknown> | null>(null);
    const [hourly, setHourly] = useState<{ day_of_week: number; current_hour: number; slots: { hour: number; busyness: number }[] } | null>(null);
+   const [warnings, setWarnings] = useState<VenueWarning[]>([]);
 
    useEffect(() => {
       getVenueHourly(venue.id).then(setHourly).catch(() => null);
+      getVenueWarnings(venue.id).then(setWarnings).catch(() => null);
       if (IS_DEV) getVenueDebug(venue.id).then(setDebug).catch(() => null);
    }, [venue.id]);
 
@@ -110,6 +112,28 @@ export default function VenueDetail({ data }: Props) {
                   <ArrowLeft size={15} />
                   Back to map
                </Link>
+
+               {/* warnings */}
+               {warnings.length > 0 && (
+                  <div className="mt-4 flex flex-col gap-2">
+                     {warnings.map((w, i) => {
+                        const styles = {
+                           high:   { wrap: "bg-orange-950/60 border-orange-700/50 text-orange-200", icon: <HardHat size={14} className="text-orange-400 shrink-0 mt-0.5" /> },
+                           medium: { wrap: "bg-yellow-950/60 border-yellow-700/50 text-yellow-200", icon: <Volume2 size={14} className="text-yellow-400 shrink-0 mt-0.5" /> },
+                           low:    { wrap: "bg-blue-950/60 border-blue-700/50 text-blue-200",       icon: <CalendarDays size={14} className="text-blue-400 shrink-0 mt-0.5" /> },
+                        }[w.severity];
+                        return (
+                           <div key={i} className={`flex gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs ${styles.wrap}`}>
+                              {styles.icon}
+                              <div>
+                                 <p className="font-semibold leading-snug">{w.title}</p>
+                                 <p className="opacity-75 mt-0.5 leading-snug">{w.detail}</p>
+                              </div>
+                           </div>
+                        );
+                     })}
+                  </div>
+               )}
 
                {/* header */}
                <div className="mt-6 flex items-start gap-5">

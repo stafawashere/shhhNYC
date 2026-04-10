@@ -66,6 +66,48 @@ def get_street_events(event_date: date | None = None) -> list[dict]:
         return []
 
 
+def get_citywide_construction(limit: int = 300) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%S")
+    params = {
+        "$limit": limit,
+        "$where": (
+            "latitude IS NOT NULL AND longitude IS NOT NULL"
+            " AND latitude > '40.48' AND latitude < '40.92'"
+            " AND longitude > '-74.26' AND longitude < '-73.69'"
+            " AND filing_status NOT IN ('Filing Withdrawn','Signed-off','Disapproved')"
+            f" AND filing_date > '{cutoff}'"
+        ),
+        "$select": "job_filing_number,job_type,filing_status,latitude,longitude,borough,filing_date",
+        "$order": "filing_date DESC",
+    }
+    try:
+        resp = httpx.get(_CONSTRUCTION_URL, params=params, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPError:
+        return []
+
+
+def get_citywide_noise_hotspots(limit: int = 200, days: int = 10) -> list[dict]:
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    params = {
+        "$limit": limit,
+        "$where": (
+            f"within_circle(location,40.73,-73.99,15000)"
+            f" AND complaint_type like 'Noise%'"
+            f" AND created_date > '{since}'"
+        ),
+        "$select": "complaint_type,descriptor,created_date,latitude,longitude,borough",
+        "$order": "created_date DESC",
+    }
+    try:
+        resp = httpx.get(_NOISE_311_URL, params=params, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPError:
+        return []
+
+
 def get_nearby_noise_complaints(lat: float, lng: float, radius_m: float = 300, days: int = 7) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     params = {
