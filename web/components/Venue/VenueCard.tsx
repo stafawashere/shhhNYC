@@ -18,9 +18,10 @@ const labelColors: Record<string, { badge: string; bar: string }> = {
 };
 
 const BREAKDOWN_LABELS = [
-   { key: "venue_traits" as const,    label: "Space traits", max: 40 },
-   { key: "time_pattern" as const,    label: "Time pattern", max: 50 },
-   { key: "live_adjustment" as const, label: "Live signal",  max: 15 },
+   { key: "venue_traits" as const,    label: "Space", max: 40 },
+   { key: "time_pattern" as const,    label: "Time", max: 50 },
+   { key: "live_adjustment" as const, label: "Live",  max: 15, isModifier: true },
+   { key: "traffic_penalty" as const, label: "Traffic", max: 10 },
 ];
 
 export default function VenueCard({ data, onClose }: Props) {
@@ -64,14 +65,19 @@ export default function VenueCard({ data, onClose }: Props) {
          </div>
 
          {/* breakdown */}
-         <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-center">
-            {BREAKDOWN_LABELS.map(({ key, label, max }) => {
-               const val = score.breakdown[key];
-               const pct = Math.round((val / max) * 100);
+         <div className="mt-3 grid grid-cols-4 gap-2 text-xs text-center">
+            {BREAKDOWN_LABELS.map(({ key, label, max, isModifier }) => {
+               const raw = score.breakdown[key];
+               const val = isModifier ? -raw : max - raw;
+               const pct = isModifier 
+                  ? ((max - raw) / (max * 2)) * 100 // center 0
+                  : ((max - raw) / max) * 100;
+               const sign = isModifier && val > 0 ? "+" : "";
+
                return (
-                  <div key={key} className="rounded-lg p-2" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>
-                     <div className="font-bold text-zinc-100">{val.toFixed(0)}<span className="text-zinc-500 font-normal">/{max}</span></div>
-                     <div className="text-zinc-500 mt-0.5">{label}</div>
+                  <div key={key} className="rounded-lg p-2 flex flex-col justify-between" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>
+                     <div className="font-bold text-zinc-100">{sign}{val.toFixed(0)}<span className="text-zinc-500 font-normal">/{max}</span></div>
+                     <div className="text-zinc-500 my-0.5">{label}</div>
                      <div className="mt-1 h-1 rounded-full bg-zinc-700 overflow-hidden">
                         <div className="h-full rounded-full bg-zinc-400" style={{ width: `${pct}%` }} />
                      </div>
@@ -79,6 +85,20 @@ export default function VenueCard({ data, onClose }: Props) {
                );
             })}
          </div>
+
+         {score.traffic_congestion !== null && (
+            <div className="mt-3 flex items-center gap-2 text-xs rounded-lg p-2" style={{ backgroundColor: "rgba(39,39,42,0.6)", border: "1px solid rgba(63,63,70,0.4)" }}>
+               <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: score.traffic_congestion >= 0.8 ? "#10b981" : score.traffic_congestion >= 0.5 ? "#eab308" : score.traffic_congestion >= 0.3 ? "#f97316" : "#ef4444" }}
+               />
+               <span className="text-zinc-400">Traffic</span>
+               <span className="text-zinc-200 font-semibold">
+                  {score.traffic_congestion >= 0.8 ? "Free flow" : score.traffic_congestion >= 0.5 ? "Moderate" : score.traffic_congestion >= 0.3 ? "Heavy" : "Severe"}
+               </span>
+               <span className="text-zinc-500 ml-auto">{Math.round(score.traffic_congestion * 100)}% speed</span>
+            </div>
+         )}
 
          <div className="mt-3 flex items-center justify-between">
             <div className="flex gap-2 text-xs flex-wrap">

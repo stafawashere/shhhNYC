@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     yelp_api_key: str = ""
     besttime_api_key_private: str = ""
     besttime_api_key_public: str = ""
+    tomtom_api_key: str = ""
 
     class Config:
         env_file = ".env"

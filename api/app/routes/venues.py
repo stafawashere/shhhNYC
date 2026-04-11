@@ -180,6 +180,8 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
             "weather_modifier": rt.weather_modifier if rt else None,
             "nearby_event": rt.nearby_event if rt else None,
             "construction_nearby": rt.construction_nearby if rt else None,
+            "tomtom_traffic_congestion": rt.tomtom_traffic_congestion if rt else None,
+            "tomtom_incidents_nearby": rt.tomtom_incidents_nearby if rt else None,
         },
 
         "user_signals": [

@@ -27,6 +27,7 @@ export interface ScoreBreakdown {
    venue_traits: number;
    time_pattern: number;
    live_adjustment: number;
+   traffic_penalty: number;
 }
 
 export interface Score {
@@ -34,6 +35,7 @@ export interface Score {
    label: string;
    confidence: number;
    breakdown: ScoreBreakdown;
+   traffic_congestion: number | null;
 }
 
 export interface VenueWithScore {
@@ -101,7 +103,7 @@ export interface NoiseIncident {
    complaint_type: string;
    descriptor: string;
    borough: string;
-   created_date: string | null;  // 311 dataset has ~5 day publish lag
+   created_date: string | null; 
 }
 
 export interface EventIncident {

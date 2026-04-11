@@ -16,4 +16,6 @@ class RealtimeModifier(Base):
     nearby_event = Column(Boolean, default=False)
     event_description = Column(Text)
     construction_nearby = Column(Boolean, default=False)
+    tomtom_traffic_congestion = Column(Float)
+    tomtom_incidents_nearby = Column(Boolean, default=False)
     computed_modifier = Column(Float)

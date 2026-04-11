@@ -72,8 +72,6 @@ def get_citywide_construction(limit: int = 300) -> list[dict]:
         "$limit": limit,
         "$where": (
             "latitude IS NOT NULL AND longitude IS NOT NULL"
-            " AND latitude > '40.48' AND latitude < '40.92'"
-            " AND longitude > '-74.26' AND longitude < '-73.69'"
             " AND filing_status NOT IN ('Filing Withdrawn','Signed-off','Disapproved')"
             f" AND filing_date > '{cutoff}'"
         ),

@@ -34,7 +34,7 @@ export default function VenueMarker({ data, lat, lng, scale = 1, onClick }: Prop
 
    return (
       <Marker latitude={lat} longitude={lng} onClick={onClick} anchor="bottom">
-         <div className="group cursor-pointer flex flex-col items-center relative" style={{ transform: `scale(${scale})`, transformOrigin: "bottom center" }}>
+         <div className="group cursor-pointer flex flex-col items-center relative" style={{ transform: `scale(${scale})`, transformOrigin: "bottom center", zIndex: 10 }}>
             {/* glass pill */}
             <div
                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-transform group-hover:scale-110"

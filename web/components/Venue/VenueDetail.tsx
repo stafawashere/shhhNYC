@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays } from "lucide-react";
+import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays, Car, Info } from "lucide-react";
 import { VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
 import HourlyChart from "./HourlyChart";
 
@@ -24,9 +24,10 @@ const SCORE_COLORS: Record<string, { ring: string; badge: string; bar: string }>
 
 // breakdown values are noise penalties — invert to show quiet contribution
 const BREAKDOWN_CONFIG = [
-   { key: "venue_traits" as const,    label: "Space",       max: 40, color: "bg-violet-500" },
-   { key: "time_pattern" as const,    label: "Time",        max: 50, color: "bg-blue-500" },
-   { key: "live_adjustment" as const, label: "Live signal", max: 15, color: "bg-cyan-500", isModifier: true },
+   { key: "venue_traits" as const,    label: "Space",       max: 40, color: "bg-violet-500", tooltip: <>Acoustic baseline from the venue's physical architecture, seating, and music policy.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Excellent acoustic dampening.<br/><strong className="text-zinc-300">Lower:</strong> Echo-heavy spaces with loud music.</div></> },
+   { key: "time_pattern" as const,    label: "Time",        max: 50, color: "bg-blue-500", tooltip: <>Historical busyness based on Google foot-traffic models for this specific day and hour.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Historically empty right now.<br/><strong className="text-zinc-300">Lower:</strong> Historically swamped right now.</div></> },
+   { key: "live_adjustment" as const, label: "Live signal", max: 15, color: "bg-cyan-500", isModifier: true, tooltip: <>Live fluctuations in local weather, 311 noise complaints, construction, and foot traffic spikes.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Positive (+):</strong> Quieter than normal (e.g. raining).<br/><strong className="text-zinc-300">Negative (-):</strong> Very noisy (e.g. active construction or large crowd).</div></> },
+   { key: "traffic_penalty" as const, label: "Traffic",     max: 10,  color: "bg-amber-500", tooltip: <>A geographic penalty based on instantaneous traffic flow speeds mapped by TomTom.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Traffic is smoothly flowing or empty.<br/><strong className="text-zinc-300">Lower:</strong> Cars are backed up with potential honking.</div></> },
 ];
 
 function ScoreRing({ score, color }: { score: number; color: string }) {
@@ -158,21 +159,28 @@ export default function VenueDetail({ data }: Props) {
                {/* breakdown — values inverted so higher = quieter */}
                <div className="mt-6">
                   <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Score breakdown</h2>
-                  <div className="grid grid-cols-3 gap-3">
-                     {BREAKDOWN_CONFIG.map(({ key, label, max, color, isModifier }) => {
+                  <div className="grid grid-cols-4 gap-3">
+                     {BREAKDOWN_CONFIG.map(({ key, label, max, color, isModifier, tooltip }) => {
                         const raw = score.breakdown[key];
-                        // for modifiers (live_adjustment) show signed value; for penalties invert
-                        const display = isModifier ? raw : max - raw;
+                        // for modifiers, invert the sign because the rest of the app displays "Quietness" logic
+                        const val = isModifier ? -raw : max - raw;
                         const pct = isModifier
-                           ? ((raw + max) / (max * 2)) * 100  // center 0 in the bar
+                           ? ((max - raw) / (max * 2)) * 100  // center 0 in the bar, high noise drops it
                            : ((max - raw) / max) * 100;
-                        const sign = isModifier && raw > 0 ? "+" : "";
+                        const sign = isModifier && val > 0 ? "+" : "";
                         return (
                            <div key={key} className="bg-zinc-900 rounded-xl p-4 text-center">
                               <div className="text-xl font-extrabold text-zinc-50">
-                                 {sign}{display.toFixed(0)}<span className="text-xs text-zinc-600 font-normal">/{max}</span>
+                                 {sign}{val.toFixed(0)}<span className="text-xs text-zinc-600 font-normal">/{max}</span>
                               </div>
-                              <div className="text-xs text-zinc-500 mt-1">{label}</div>
+                              <div className="text-xs text-zinc-500 mt-1 flex justify-center items-center gap-1 group relative">
+                                 {label}
+                                 <Info size={11} className="text-zinc-600 group-hover:text-zinc-400 transition-colors" />
+                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 rounded-lg bg-zinc-800 text-zinc-300 text-left text-[11px] leading-snug shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all border border-zinc-700 z-10 pointer-events-none">
+                                    {tooltip}
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-[5px] border-transparent border-t-zinc-700" />
+                                 </div>
+                              </div>
                               <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                                  <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
                               </div>
@@ -180,7 +188,28 @@ export default function VenueDetail({ data }: Props) {
                         );
                      })}
                   </div>
-                  <p className="text-xs text-zinc-600 mt-2">Higher = quieter · Live signal is a ±15 modifier</p>
+
+                  {score.traffic_congestion !== null && (() => {
+                     const tc = score.traffic_congestion!;
+                     const tcColor = tc >= 0.8 ? "#10b981" : tc >= 0.5 ? "#eab308" : tc >= 0.3 ? "#f97316" : "#ef4444";
+                     const tcLabel = tc >= 0.8 ? "Free flow" : tc >= 0.5 ? "Moderate traffic" : tc >= 0.3 ? "Heavy traffic" : "Severe congestion";
+                     return (
+                        <div className="mt-4 bg-zinc-900 rounded-xl p-4">
+                           <div className="flex items-center gap-2 mb-2">
+                              <Car size={14} className="text-zinc-500" />
+                              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Traffic Congestion</span>
+                           </div>
+                           <div className="flex items-center gap-3">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tcColor }} />
+                              <span className="text-lg font-semibold text-zinc-100">{tcLabel}</span>
+                              <span className="text-sm text-zinc-500 ml-auto">{Math.round(tc * 100)}% of free-flow speed</span>
+                           </div>
+                           <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                              <div className="h-full rounded-full" style={{ backgroundColor: tcColor, width: `${Math.round(tc * 100)}%` }} />
+                           </div>
+                        </div>
+                     );
+                  })()}
                </div>
 
                {/* hourly chart */}
@@ -241,6 +270,7 @@ export default function VenueDetail({ data }: Props) {
                         <DebugRow k="breakdown.venue_traits" v={`${score.breakdown.venue_traits} / 40 (${((score.breakdown.venue_traits / 40) * 100).toFixed(1)}%)`} />
                         <DebugRow k="breakdown.time_pattern" v={`${score.breakdown.time_pattern} / 50 (${((score.breakdown.time_pattern / 50) * 100).toFixed(1)}%)`} />
                         <DebugRow k="breakdown.live_adjustment" v={`${score.breakdown.live_adjustment} / ±15`} />
+                        <DebugRow k="breakdown.traffic_penalty" v={`${score.breakdown.traffic_penalty} / 8`} />
                         <DebugRow k="breakdown.sum_noise" v={score.breakdown.venue_traits + score.breakdown.time_pattern + score.breakdown.live_adjustment} />
 
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">google places</p>
@@ -261,6 +291,10 @@ export default function VenueDetail({ data }: Props) {
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">realtime snapshot</p>
                         <DebugRow k="modifier_id" v={(debug?.realtime_snapshot as Record<string,unknown>)?.modifier_id} />
                         <DebugRow k="timestamp" v={(debug?.realtime_snapshot as Record<string,unknown>)?.timestamp} />
+
+                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">tomtom traffic</p>
+                        <DebugRow k="traffic_congestion" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_traffic_congestion} />
+                        <DebugRow k="incidents_nearby" v={String((debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_incidents_nearby)} />
 
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">user signals (last 5)</p>
                         {debug && (debug.user_signals as unknown[])?.length

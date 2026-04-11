@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.venue import Venue
-from app.db.queries import get_hourly_profile
+from app.db.queries import get_hourly_profile, get_latest_realtime
 from app.scoring.static import static_score
 from app.scoring.temporal import temporal_score
 from app.scoring.realtime import realtime_score
@@ -28,12 +28,14 @@ def quiet_score(db: Session, venue: Venue, dt: datetime = None) -> dict:
 
     s = static_score(venue)
     t = temporal_score(db, venue, dt)
-    r = realtime_score(db, venue)
+    r, tp = realtime_score(db, venue)
 
-    noise_score = max(0, min(100, s + t + r))
+    noise_score = max(0, min(100, s + t + r + tp))
     score = 100 - noise_score
 
     profile = get_hourly_profile(db, venue.id, dt.hour, dt.weekday())
+
+    rt_row = get_latest_realtime(db, venue.id)
 
     return {
         "quiet_score": round(score),
@@ -43,5 +45,7 @@ def quiet_score(db: Session, venue: Venue, dt: datetime = None) -> dict:
             "venue_traits": s,
             "time_pattern": t,
             "live_adjustment": r,
-        }
+            "traffic_penalty": tp,
+        },
+        "traffic_congestion": rt_row.tomtom_traffic_congestion if rt_row else None,
     }

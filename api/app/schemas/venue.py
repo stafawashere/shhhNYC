@@ -32,6 +32,7 @@ class ScoreBreakdown(BaseModel):
     venue_traits: float
     time_pattern: float
     live_adjustment: float
+    traffic_penalty: float = 0.0
 
 
 class ScoreResponse(BaseModel):
@@ -39,6 +40,7 @@ class ScoreResponse(BaseModel):
     label: str
     confidence: float
     breakdown: ScoreBreakdown
+    traffic_congestion: Optional[float] = None
 
 
 class VenueWithScore(BaseModel):
