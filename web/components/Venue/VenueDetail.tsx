@@ -176,38 +176,69 @@ export default function VenueDetail({ data }: Props) {
    const depHealth: Health    = depLevel == null ? "neutral" : depLevel < 60 ? "good" : depLevel < 80 ? "warn" : "bad";
    const odHealth: Health     = (eventCount > 10 || complaintCount > 3 || construction) ? "bad" : (eventCount > 0 || complaintCount > 0) ? "warn" : "good";
 
+   // warnings badge renderer (shared)
+   const warningBadges = warnings.length > 0 ? (
+      <div className="flex flex-col gap-1.5 shrink-0">
+         {warnings.map((w, i) => {
+            const cfg = {
+               high:   { bg: "bg-orange-950/70 border-orange-700/50 text-orange-300", icon: <HardHat size={11} className="text-orange-400 shrink-0" /> },
+               medium: { bg: "bg-yellow-950/70 border-yellow-700/50 text-yellow-300", icon: <Volume2 size={11} className="text-yellow-400 shrink-0" /> },
+               low:    { bg: "bg-blue-950/70 border-blue-700/50 text-blue-300",       icon: <CalendarDays size={11} className="text-blue-400 shrink-0" /> },
+            }[w.severity];
+            const shortLabel = w.type === "construction" ? "Construction" : w.type === "noise_complaints" ? "Noise alert" : "Nearby event";
+            return (
+               <div key={i} className={`group relative flex items-center gap-3 px-3 py-1 rounded-lg border text-[10px] font-semibold cursor-default whitespace-nowrap ${cfg.bg}`}>
+                  {cfg.icon}
+                  <span>{shortLabel}</span>
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-52 p-2 rounded-lg bg-zinc-800 text-zinc-300 text-[11px] leading-snug shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all border border-zinc-700 z-20 pointer-events-none">
+                     <p className="font-semibold text-zinc-100 mb-0.5">{w.title}</p>
+                     <p className="text-zinc-400">{w.detail}</p>
+                     <div className="absolute right-full top-1/2 -translate-y-1/2 -mr-[1px] border-[5px] border-transparent border-r-zinc-700" />
+                  </div>
+               </div>
+            );
+         })}
+      </div>
+   ) : null;
+
    return (
       <div className={`${IS_DEV ? "max-w-5xl" : "max-w-xl"} mx-auto px-5 py-8 text-zinc-100`}>
-         <div className={IS_DEV ? "flex flex-col md:flex-row gap-8 md:items-start" : ""}>
+
+         {/* ── top bar: back link (full width) ── */}
+         <Link href="/" className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-zinc-50 transition-colors py-1">
+            <ArrowLeft size={15} />Back to map
+         </Link>
+
+         {/* ── photos (full width) ── */}
+         {venue.photos && venue.photos.length > 0 && (
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+               {venue.photos.map((_, i) => (
+                  <img
+                     key={i}
+                     src={`/api/venues/${venue.id}/photo/${i}`}
+                     alt={`${venue.name} photo ${i + 1}`}
+                     className="h-40 w-auto rounded-xl object-cover shrink-0 flex-1 min-w-0"
+                     style={{ maxWidth: "60vw" }}
+                  />
+               ))}
+            </div>
+         )}
+
+         {/* ── content area: warnings float left via absolute, main keeps full width ── */}
+         <div className={`relative mt-6 ${IS_DEV ? "flex gap-8 items-start" : ""}`}>
+
+            {/* warnings: absolutely outside the content flow, no width taken */}
+            {warnings.length > 0 && (
+               <div className="absolute right-full top-0 mr-8 flex flex-col gap-1.5">
+                  <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-1">Alerts</h2>
+                  {warningBadges}
+               </div>
+            )}
 
             {/* ── main content ── */}
             <div className="flex-1 min-w-0">
-               <Link href="/" className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-zinc-50 transition-colors py-1">
-                  <ArrowLeft size={15} />Back to map
-               </Link>
 
-               {warnings.length > 0 && (
-                  <div className="mt-4 flex flex-col gap-2">
-                     {warnings.map((w, i) => {
-                        const styles = {
-                           high:   { wrap: "bg-orange-950/60 border-orange-700/50 text-orange-200", icon: <HardHat size={14} className="text-orange-400 shrink-0 mt-0.5" /> },
-                           medium: { wrap: "bg-yellow-950/60 border-yellow-700/50 text-yellow-200", icon: <Volume2 size={14} className="text-yellow-400 shrink-0 mt-0.5" /> },
-                           low:    { wrap: "bg-blue-950/60 border-blue-700/50 text-blue-200",       icon: <CalendarDays size={14} className="text-blue-400 shrink-0 mt-0.5" /> },
-                        }[w.severity];
-                        return (
-                           <div key={i} className={`flex gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs ${styles.wrap}`}>
-                              {styles.icon}
-                              <div>
-                                 <p className="font-semibold leading-snug">{w.title}</p>
-                                 <p className="opacity-75 mt-0.5 leading-snug">{w.detail}</p>
-                              </div>
-                           </div>
-                        );
-                     })}
-                  </div>
-               )}
-
-               <div className="mt-6 flex items-start gap-5">
+               <div className="flex items-start gap-5">
                   <div className="flex-1 min-w-0">
                      <h1 className="text-2xl font-bold text-zinc-50 leading-tight">{venue.name}</h1>
                      <p className="text-sm text-zinc-400 mt-1">{venue.address}</p>
@@ -257,22 +288,21 @@ export default function VenueDetail({ data }: Props) {
                   {score.traffic_congestion !== null && (() => {
                      const tc = score.traffic_congestion!;
                      const tcColor = tc >= 0.8 ? "#10b981" : tc >= 0.5 ? "#eab308" : tc >= 0.3 ? "#f97316" : "#ef4444";
-                     const tcLabel = tc >= 0.8 ? "Free flow" : tc >= 0.5 ? "Moderate traffic" : tc >= 0.3 ? "Heavy traffic" : "Severe congestion";
+                     const tcLabel = tc >= 0.8 ? "No traffic" : tc >= 0.5 ? "Moderate traffic" : tc >= 0.3 ? "Heavy traffic" : "Severe congestion";
                      return (
-                        <div className="mt-4 bg-zinc-900 rounded-xl p-4">
-                           <div className="flex items-center gap-2 mb-2">
-                              <Car size={14} className="text-zinc-500" />
-                              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Traffic Congestion</span>
+                        <>
+                        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mt-6 mb-3">Traffic Congestion</h2>
+                        <div className="bg-zinc-900 rounded-xl p-4">
+                           <div className="flex items-center gap-2.5">
+                              <span className="inline-block w-3.5 h-3.5 rounded-full shrink-0 border-2" style={{ borderStyle: "dotted", borderColor: tcColor }} />
+                              <span className="text-base font-semibold text-zinc-100">{tcLabel}</span>
+                              <span className="text-xs text-zinc-500 ml-auto">{Math.round(tc * 100)}% of free-flow speed</span>
                            </div>
-                           <div className="flex items-center gap-3">
-                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tcColor }} />
-                              <span className="text-lg font-semibold text-zinc-100">{tcLabel}</span>
-                              <span className="text-sm text-zinc-500 ml-auto">{Math.round(tc * 100)}% of free-flow speed</span>
-                           </div>
-                           <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                           <div className="mt-3 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                               <div className="h-full rounded-full" style={{ backgroundColor: tcColor, width: `${Math.round(tc * 100)}%` }} />
                            </div>
                         </div>
+                        </>
                      );
                   })()}
                </div>

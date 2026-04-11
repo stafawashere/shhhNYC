@@ -274,23 +274,30 @@ export default function MapView({
                      onClick={() => setShowTraffic((t) => !t)}
                      className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors text-left"
                   >
-                     <span
-                        className="w-8 h-2 shrink-0 rounded-sm inline-block"
-                        style={{ background: "linear-gradient(to right, #10b981, #eab308, #ef4444)", opacity: showTraffic ? 1 : 0.35 }}
-                     />
+                     <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                        <span
+                           className="w-3.5 h-3.5 rounded-full inline-block"
+                           style={{
+                              border: "2px dotted #6ee7b7",
+                              opacity: showTraffic ? 1 : 0.35,
+                           }}
+                        />
+                     </span>
                      <span className={showTraffic ? "" : "line-through opacity-40"}>Traffic congestion</span>
                   </button>
                )}
                {nearbyConstruction.length > 0 && (
                   <div className="flex items-center gap-2 text-zinc-400">
-                     <span
-                        className="w-3 h-3 shrink-0 inline-block"
-                        style={{
-                           backgroundColor: "rgba(234,179,8,0.45)",
-                           transform: "rotate(45deg)",
-                           border: "1px solid rgba(253,224,71,0.5)",
-                        }}
-                     />
+                     <span className="w-5 h-5 shrink-0 flex items-center justify-center">
+                        <span
+                           className="w-3 h-3 inline-block"
+                           style={{
+                              backgroundColor: "rgba(234,179,8,0.45)",
+                              transform: "rotate(45deg)",
+                              border: "1px solid rgba(253,224,71,0.5)",
+                           }}
+                        />
+                     </span>
                      Construction ({nearbyConstruction.length})
                   </div>
                )}

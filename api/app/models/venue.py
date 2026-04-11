@@ -63,6 +63,7 @@ class Venue(Base):
     pedestrian_volume = Column(Integer)
     google_review_count = Column(Integer) 
     google_noise_estimate = Column(Text) 
+    photos = Column(ARRAY(Text))
     google_place_id = Column(Text, unique=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())

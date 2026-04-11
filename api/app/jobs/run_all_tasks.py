@@ -18,6 +18,7 @@ from app.jobs.tasks import (
     refresh_nta_baseline,
     refresh_pedestrian_counts,
     refresh_popular_times,
+    refresh_venue_photos,
     prune_realtime_modifiers
 )
 
@@ -40,6 +41,7 @@ def run_all():
     refresh_nta_baseline.delay()
     refresh_pedestrian_counts.delay()
     refresh_popular_times.delay()
+    refresh_venue_photos.delay()
 
     prune_realtime_modifiers.delay()
 

@@ -21,6 +21,7 @@ export interface Venue {
    noise_level_yelp: string | null;
    nearest_subway_m: number | null;
    google_place_id: string | null;
+   photos: string[] | null;
    lat: number | null;
    lng: number | null;
 }

@@ -431,6 +431,21 @@ def refresh_pedestrian_counts():
 
 
 @celery.task
+def refresh_venue_photos():
+    if not _throttle("venue_photos", cooldown_seconds=86400 * 7): return
+
+    db = SessionLocal()
+    try:
+        for venue in _all_venues(db):
+            refs = google_places.get_photo_references(venue.google_place_id, max_photos=3)
+            if refs:
+                venue.photos = refs
+        db.commit()
+    finally:
+        db.close()
+
+
+@celery.task
 def refresh_popular_times():
     if not _throttle("popular_times", cooldown_seconds=3600): return
 

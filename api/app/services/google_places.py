@@ -1,7 +1,8 @@
 import httpx
 from app.config import settings
 
-_BASE = "https://maps.googleapis.com/maps/api/place/details/json"
+_BASE  = "https://maps.googleapis.com/maps/api/place/details/json"
+_PHOTO = "https://maps.googleapis.com/maps/api/place/photo"
 
 
 def _get_place_details(place_id: str) -> dict | None:
@@ -48,6 +49,43 @@ def get_review_data(place_id: str) -> tuple[list[str], int]:
         return texts, count
     except httpx.HTTPError:
         return [], 0
+
+
+def get_photo_references(place_id: str, max_photos: int = 3) -> list[str]:
+    if not settings.google_places_api_key:
+        return []
+    params = {
+        "place_id": place_id,
+        "fields": "photos",
+        "key": settings.google_places_api_key,
+    }
+    try:
+        resp = httpx.get(_BASE, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        result = data.get("result") if data.get("status") == "OK" else None
+        if not result:
+            return []
+        return [p["photo_reference"] for p in result.get("photos", [])[:max_photos] if p.get("photo_reference")]
+    except httpx.HTTPError:
+        return []
+
+
+def fetch_photo(photo_reference: str, max_width: int = 800) -> bytes | None:
+    if not settings.google_places_api_key:
+        return None
+    try:
+        r = httpx.get(
+            _PHOTO,
+            params={"maxwidth": max_width, "photo_reference": photo_reference, "key": settings.google_places_api_key},
+            follow_redirects=True,
+            timeout=15,
+        )
+        if r.status_code == 200:
+            return r.content
+        return None
+    except httpx.HTTPError:
+        return None
 
 
 def get_popular_times(place_id: str) -> dict[int, dict[int, float]] | None:

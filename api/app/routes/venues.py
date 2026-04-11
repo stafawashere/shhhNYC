@@ -1,7 +1,8 @@
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
-from app.services import nyc_opendata
+from fastapi.responses import Response
+from app.services import nyc_opendata, google_places
 from sqlalchemy.orm import Session
 
 _NYC_TZ = ZoneInfo("America/New_York")
@@ -37,6 +38,7 @@ def venue_to_dict(v: Venue) -> dict:
         "noise_level_yelp": v.noise_level_yelp,
         "nearest_subway_m": v.nearest_subway_m,
         "google_place_id": v.google_place_id,
+        "photos": v.photos or [],
         "lat": point.y, "lng": point.x,
     }
 
@@ -69,6 +71,17 @@ def get_venue(venue_id: str, db: Session = Depends(get_db)):
     if not venue:
         raise HTTPException(status_code=404, detail="Venue not found")
     return {"venue": venue_to_dict(venue), "score": quiet_score(db, venue)}
+
+
+@router.get("/{venue_id}/photo/{index}")
+def get_venue_photo(venue_id: str, index: int, db: Session = Depends(get_db)):
+    venue = db.query(Venue).filter(Venue.id == venue_id).first()
+    if not venue or not venue.photos or index >= len(venue.photos):
+        raise HTTPException(status_code=404, detail="Photo not found")
+    data = google_places.fetch_photo(venue.photos[index])
+    if not data:
+        raise HTTPException(status_code=502, detail="Could not fetch photo")
+    return Response(content=data, media_type="image/jpeg")
 
 
 @router.get("/{venue_id}/predict", response_model=ScoreResponse)
