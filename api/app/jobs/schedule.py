@@ -20,7 +20,7 @@ celery.conf.beat_schedule = {
     },
     "tomtom-traffic": {
         "task": "app.jobs.tasks.refresh_tomtom_data",
-        "schedule": crontab(minute="*/15"),
+        "schedule": crontab(hour="7-22", minute="0,20,40"),
     },
     "mta-alerts": {
         "task": "app.jobs.tasks.refresh_mta_alerts",

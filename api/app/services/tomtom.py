@@ -1,5 +1,8 @@
 import requests
+import logging
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _FLOW_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
 _INCIDENTS_URL = "https://api.tomtom.com/traffic/services/5/incidentDetails"
@@ -29,9 +32,16 @@ def get_traffic_flow(lat: float, lng: float) -> dict | None:
             params={"point": f"{lat},{lng}", "unit": "KMPH", "key": settings.tomtom_api_key},
             timeout=8,
         )
+        if resp.status_code == 403:
+            logger.error(f"TomTom Flow API Forbidden: {resp.text}")
+            return None
         resp.raise_for_status()
         return resp.json().get("flowSegmentData")
-    except Exception:
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"TomTom Flow API Request failed: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in TomTom get_traffic_flow: {e}")
         return None
 
 
@@ -49,9 +59,16 @@ def get_traffic_incidents(lat: float, lng: float) -> list[dict]:
             },
             timeout=8,
         )
+        if resp.status_code == 403:
+            logger.error(f"TomTom Incidents API Forbidden: {resp.text}")
+            return []
         resp.raise_for_status()
         return resp.json().get("incidents", [])
-    except Exception:
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"TomTom Incidents API Request failed: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error in TomTom get_traffic_incidents: {e}")
         return []
 
 

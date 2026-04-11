@@ -1,4 +1,5 @@
 from celery import Celery
+import logging
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from app.config import settings
@@ -11,6 +12,7 @@ from geoalchemy2.shape import to_shape
 from celery.signals import worker_process_init
 from app.db.session import engine
 
+logger = logging.getLogger(__name__)
 celery = Celery("shhhnyc", broker=settings.redis_url, backend=settings.redis_url)
 
 @worker_process_init.connect
@@ -218,6 +220,11 @@ def refresh_tomtom_data():
             lat, lng = _coords(venue)
             flow = tomtom.get_traffic_flow(lat, lng)
             incidents = tomtom.get_traffic_incidents(lat, lng)
+            
+            if flow is None and not incidents:
+                logger.warning(f"Failed to retrieve TomTom data for venue {venue.id} ({venue.name})")
+                continue
+
             congestion_ratio, incident_severity = tomtom.compute_noise_penalty(flow, incidents)
 
             existing = _latest_modifier(db, venue.id)

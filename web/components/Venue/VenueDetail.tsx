@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays, Car, Info, Train, Maximize2 } from "lucide-react";
 import { API_BASE, VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
 import HourlyChart from "./HourlyChart";
+import Tooltip from "../common/Tooltip";
 
 const IS_DEV = process.env.NODE_ENV !== "production";
 
@@ -16,14 +17,14 @@ function humanize(val: string | null | undefined): string | null {
 
 const SCORE_COLORS: Record<string, { ring: string; badge: string; bar: string }> = {
    "Very Quiet": { ring: "#10b981", badge: "bg-emerald-900/40 text-emerald-300", bar: "bg-emerald-500" },
-   Quiet:        { ring: "#22c55e", badge: "bg-green-900/40 text-green-300",     bar: "bg-green-400" },
-   Moderate:     { ring: "#eab308", badge: "bg-yellow-900/40 text-yellow-300",   bar: "bg-yellow-400" },
-   Loud:         { ring: "#f97316", badge: "bg-orange-900/40 text-orange-300",   bar: "bg-orange-400" },
+   "Quiet":        { ring: "#22c55e", badge: "bg-green-900/40 text-green-300",     bar: "bg-green-400" },
+   "Moderate":     { ring: "#eab308", badge: "bg-yellow-900/40 text-yellow-300",   bar: "bg-yellow-400" },
+   "Loud":         { ring: "#f97316", badge: "bg-orange-900/40 text-orange-300",   bar: "bg-orange-400" },
    "Very Loud":  { ring: "#ef4444", badge: "bg-red-900/40 text-red-300",         bar: "bg-red-500" },
 };
 
 const BREAKDOWN_CONFIG = [
-   { key: "venue_traits" as const,    label: "Space",       max: 40, color: "bg-violet-500", tooltip: <>Acoustic baseline from the venue's physical architecture, seating, and music policy.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Excellent acoustic dampening.<br/><strong className="text-zinc-300">Lower:</strong> Echo-heavy spaces with loud music.</div></> },
+   { key: "venue_traits" as const,    label: "Space",       max: 40, color: "bg-violet-500", tooltip: <>Acoustic baseline from the venues physical architecture, seating, and music policy.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Excellent acoustic dampening.<br/><strong className="text-zinc-300">Lower:</strong> Echo-heavy spaces with loud music.</div></> },
    { key: "time_pattern" as const,    label: "Time",        max: 50, color: "bg-blue-500",   tooltip: <>Historical busyness based on Google foot-traffic models for this specific day and hour.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Historically empty right now.<br/><strong className="text-zinc-300">Lower:</strong> Historically swamped right now.</div></> },
    { key: "live_adjustment" as const, label: "Live signal", max: 15, color: "bg-cyan-500",   isModifier: true, tooltip: <>Live fluctuations in local weather, 311 noise complaints, construction, and foot traffic spikes.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Positive (+):</strong> Quieter than normal (e.g. raining).<br/><strong className="text-zinc-300">Negative (-):</strong> Very noisy (e.g. active construction or large crowd).</div></> },
    { key: "traffic_penalty" as const, label: "Traffic",     max: 10, color: "bg-amber-500",  tooltip: <>A geographic penalty based on instantaneous traffic flow speeds mapped by TomTom.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Traffic is smoothly flowing or empty.<br/><strong className="text-zinc-300">Lower:</strong> Cars are backed up with potential honking.</div></> },
@@ -186,16 +187,22 @@ export default function VenueDetail({ data }: Props) {
                low:    { bg: "bg-blue-950/70 border-blue-700/50 text-blue-300",       icon: <CalendarDays size={14} className="text-blue-400 shrink-0" /> },
             }[w.severity];
             const shortLabel = w.type === "construction" ? "Construction" : w.type === "noise_complaints" ? "Noise alert" : "Nearby event";
-               return (
-                  <div key={i} className={`group relative flex items-center gap-3 px-3.5 py-1.5 rounded-lg border text-[12px] font-bold cursor-default whitespace-nowrap ${cfg.bg}`}>
-                  {cfg.icon}
-                  <span>{shortLabel}</span>
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-52 p-2 rounded-lg bg-zinc-800 text-zinc-300 text-[11px] leading-snug shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all border border-zinc-700 z-20 pointer-events-none">
-                     <p className="font-semibold text-zinc-100 mb-0.5">{w.title}</p>
-                     <p className="text-zinc-400">{w.detail}</p>
-                     <div className="absolute right-full top-1/2 -translate-y-1/2 -mr-[1px] border-[5px] border-transparent border-r-zinc-700" />
+            return (
+               <Tooltip
+                  key={i}
+                  position="right"
+                  content={
+                     <div className="w-52 p-2 rounded-lg bg-zinc-800 text-zinc-300 text-[11px] leading-snug shadow-xl border border-zinc-700 z-30">
+                        <p className="font-semibold text-zinc-100 mb-0.5">{w.title}</p>
+                        <p className="text-zinc-400">{w.detail}</p>
+                     </div>
+                  }
+               >
+                  <div className={`flex items-center gap-3 px-3.5 py-1.5 rounded-lg border text-[12px] font-bold cursor-default whitespace-nowrap ${cfg.bg}`}>
+                     {cfg.icon}
+                     <span>{shortLabel}</span>
                   </div>
-               </div>
+               </Tooltip>
             );
          })}
       </div>
@@ -230,7 +237,7 @@ export default function VenueDetail({ data }: Props) {
             {/* warnings: absolutely outside the content flow, no width taken */}
             {warnings.length > 0 && (
                <div className="absolute right-full top-0 mr-8 flex flex-col gap-2">
-                  <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Alerts</h2>
+                  <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-1">Alerts</h2>
                   {warningBadges}
                </div>
             )}
@@ -269,14 +276,18 @@ export default function VenueDetail({ data }: Props) {
                               <div className="text-xl font-extrabold text-zinc-50">
                                  {sign}{val.toFixed(0)}<span className="text-xs text-zinc-600 font-normal">/{max}</span>
                               </div>
-                              <div className="text-xs text-zinc-500 mt-1 flex justify-center items-center gap-1 group relative">
-                                 {label}
-                                 <Info size={11} className="text-zinc-600 group-hover:text-zinc-400 transition-colors" />
-                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 rounded-lg bg-zinc-800 text-zinc-300 text-left text-[11px] leading-snug shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all border border-zinc-700 z-10 pointer-events-none">
-                                    {tooltip}
-                                    <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-[5px] border-transparent border-t-zinc-700" />
+                              <Tooltip
+                                 content={
+                                    <div className="w-48 p-2.5 rounded-lg bg-zinc-800 text-zinc-300 text-left text-[11px] leading-snug shadow-xl border border-zinc-700 z-30">
+                                       {tooltip}
+                                    </div>
+                                 }
+                              >
+                                 <div className="text-xs text-zinc-500 mt-1 flex justify-center items-center gap-1 cursor-default">
+                                    {label}
+                                    <Info size={11} className="text-zinc-600 group-hover:text-zinc-400 transition-colors" />
                                  </div>
-                              </div>
+                              </Tooltip>
                               <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                                  <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
                               </div>
