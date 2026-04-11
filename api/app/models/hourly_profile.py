@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Float, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.session import Base
-from sqlalchemy import func, CheckConstraint, Index, ForeignKey
+from sqlalchemy import CheckConstraint, ForeignKey
 
 
 class VenueHourlyProfile(Base):
@@ -12,4 +12,3 @@ class VenueHourlyProfile(Base):
     day_of_week = Column(Integer, CheckConstraint("day_of_week BETWEEN 0 AND 6"), primary_key=True, nullable=False)
     busyness_avg = Column(Float, CheckConstraint("busyness_avg BETWEEN 0 AND 100"))
     noise_estimate = Column(Float)
-    confidence = Column(Float)

@@ -1,11 +1,20 @@
 import httpx
 from datetime import date, timedelta, datetime, timezone
 
-_CONSTRUCTION_URL = "https://data.cityofnewyork.us/resource/w9ak-ipjd.json" # DOB NOW: Build – Job Filings (has text lat/lng, no within_circle support)
-_EVENTS_URL = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json" # NYC Permitted Event Information (no coordinates — borough filter only)
-_NOISE_311_URL = "https://data.cityofnewyork.us/resource/erm2-nwe9.json" # 311 Service Requests — only dataset with a Point column + within_circle support
+_CONSTRUCTION_URL  = "https://data.cityofnewyork.us/resource/w9ak-ipjd.json"  # DOB NOW: Build – Job Filings
+_EVENTS_URL        = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json"  # NYC Permitted Event Information
+_NOISE_311_URL     = "https://data.cityofnewyork.us/resource/erm2-nwe9.json"  # 311 Service Requests
+_PEDESTRIAN_URL    = "https://data.cityofnewyork.us/resource/cqsj-cfgu.json"  # NYC DOT Bi-Annual Pedestrian Counts
 _TIMEOUT = 15
 _BBOX_DEG = 0.003
+
+_BOROUGH_LABELS: dict[str, str] = {
+    "manhattan":    "MANHATTAN",
+    "brooklyn":     "BROOKLYN",
+    "queens":       "QUEENS",
+    "bronx":        "BRONX",
+    "staten island": "STATEN ISLAND",
+}
 
 
 def _dist_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
@@ -16,10 +25,8 @@ def get_active_construction(lat: float, lng: float, radius_m: float = 150) -> li
     params = {
         "$limit": 100,
         "$where": (
-            f"latitude IS NOT NULL AND longitude IS NOT NULL"
-            f" AND latitude > '{lat - _BBOX_DEG}' AND latitude < '{lat + _BBOX_DEG}'"
-            f" AND longitude > '{lng - _BBOX_DEG}' AND longitude < '{lng + _BBOX_DEG}'"
-            f" AND filing_status NOT IN ('Filing Withdrawn','Signed-off','Disapproved')"
+            "latitude IS NOT NULL AND longitude IS NOT NULL"
+            " AND filing_status NOT IN ('Filing Withdrawn','Signed-off','Disapproved')"
         ),
         "$select": "job_filing_number,job_type,filing_status,latitude,longitude,borough,filing_date",
     }
@@ -124,3 +131,71 @@ def get_nearby_noise_complaints(lat: float, lng: float, radius_m: float = 300, d
         return resp.json()
     except httpx.HTTPError:
         return []
+
+
+def get_nta_noise_baseline(borough: str, days: int = 90) -> dict[str, float]:
+    boro_label = _BOROUGH_LABELS.get((borough or "").lower().strip())
+    if not boro_label:
+        return {}
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    params = {
+        "$select": "community_board,count(*) as total",
+        "$where": (
+            f"complaint_type like 'Noise%'"
+            f" AND borough='{boro_label}'"
+            f" AND created_date > '{since}'"
+            f" AND community_board IS NOT NULL"
+        ),
+        "$group": "community_board",
+        "$limit": 100,
+    }
+    try:
+        resp = httpx.get(_NOISE_311_URL, params=params, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        weeks = days / 7.0
+        return {
+            row["community_board"]: float(row["total"]) / weeks
+            for row in resp.json()
+            if row.get("community_board") and row.get("total")
+        }
+    except httpx.HTTPError:
+        return {}
+
+
+def get_pedestrian_count_near(lat: float, lng: float, radius_m: float = 400) -> int | None:
+    params = {
+        "$limit": 5,
+        "$where": f"within_circle(the_geom,{lat},{lng},{radius_m})",
+    }
+    try:
+        resp = httpx.get(_PEDESTRIAN_URL, params=params, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        rows = resp.json()
+    except httpx.HTTPError:
+        return None
+
+    if not rows:
+        return None
+
+    import re
+    _BAND_RE = re.compile(
+        r"^(?:may|sept?|oct|jun|nov)_?\d{2}(?:_|\s)?(am|pm|md)$", re.I
+    )
+
+    best_count: int | None = None
+    for row in rows:
+        band_vals: list[float] = []
+        for col, val in row.items():
+            if _BAND_RE.match(col) and val:
+                try:
+                    band_vals.append(float(val))
+                except (ValueError, TypeError):
+                    pass
+        if not band_vals:
+            continue
+        candidate = round(max(band_vals))
+        if best_count is None or candidate > best_count:
+            best_count = candidate
+
+    return best_count

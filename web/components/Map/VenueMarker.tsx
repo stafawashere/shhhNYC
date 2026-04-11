@@ -13,17 +13,17 @@ interface Props {
 
 function scoreStyle(score: number) {
    if (score >= 80) return { solid: "#10b981", alpha: "rgba(16,185,129,0.75)", border: "rgba(110,231,183,0.4)", ring: "#6ee7b7" };
-   if (score >= 65) return { solid: "#22c55e", alpha: "rgba(34,197,94,0.75)",  border: "rgba(134,239,172,0.4)", ring: "#86efac" };
-   if (score >= 50) return { solid: "#eab308", alpha: "rgba(234,179,8,0.75)",  border: "rgba(253,224,71,0.4)",  ring: "#fde047" };
-   if (score >= 35) return { solid: "#f97316", alpha: "rgba(249,115,22,0.75)", border: "rgba(253,186,116,0.4)", ring: "#fdba74" };
+   if (score >= 60) return { solid: "#22c55e", alpha: "rgba(34,197,94,0.75)",  border: "rgba(134,239,172,0.4)", ring: "#86efac" };
+   if (score >= 40) return { solid: "#eab308", alpha: "rgba(234,179,8,0.75)",  border: "rgba(253,224,71,0.4)",  ring: "#fde047" };
+   if (score >= 20) return { solid: "#f97316", alpha: "rgba(249,115,22,0.75)", border: "rgba(253,186,116,0.4)", ring: "#fdba74" };
    return            { solid: "#ef4444", alpha: "rgba(239,68,68,0.75)",   border: "rgba(252,165,165,0.4)", ring: "#fca5a5" };
 }
 
 function scoreLabel(score: number): string {
    if (score >= 80) return "Very Quiet";
-   if (score >= 65) return "Quiet";
-   if (score >= 50) return "Moderate";
-   if (score >= 35) return "Loud";
+   if (score >= 60) return "Quiet";
+   if (score >= 40) return "Moderate";
+   if (score >= 20) return "Loud";
    return "Very Loud";
 }
 

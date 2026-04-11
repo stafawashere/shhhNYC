@@ -1,7 +1,6 @@
 from sqlalchemy import Column, Text, Boolean, Integer, ARRAY, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID, ENUM
 from app.db.session import Base
-from typing import Literal
 from geoalchemy2 import Geography
 from sqlalchemy import func, CheckConstraint, Index
 import uuid
@@ -59,6 +58,11 @@ class Venue(Base):
     kid_friendly = Column(Boolean, default=True)
     price_tier = Column(Integer, CheckConstraint("price_tier BETWEEN 1 AND 4"))
 
+    noise_level_yelp = Column(Text) 
+    nearest_subway_m = Column(Integer)
+    pedestrian_volume = Column(Integer)
+    google_review_count = Column(Integer) 
+    google_noise_estimate = Column(Text) 
     google_place_id = Column(Text, unique=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())

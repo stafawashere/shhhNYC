@@ -18,6 +18,8 @@ export interface Venue {
    serves_alcohol: boolean | null;
    kid_friendly: boolean | null;
    price_tier: number | null;
+   noise_level_yelp: string | null;
+   nearest_subway_m: number | null;
    google_place_id: string | null;
    lat: number | null;
    lng: number | null;

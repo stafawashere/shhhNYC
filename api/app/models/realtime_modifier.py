@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import Column, Float, Boolean, Integer, Text, TIMESTAMP, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import func
@@ -9,13 +10,15 @@ class RealtimeModifier(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     venue_id = Column(UUID, ForeignKey("venues.id"), nullable=False)
-    timestamp = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    timestamp = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=lambda: datetime.now(timezone.utc))
 
     google_live_busyness = Column(Float)
     weather_modifier = Column(Float)
-    nearby_event = Column(Boolean, default=False)
+    event_count = Column(Integer, default=0)
     event_description = Column(Text)
+    noise_complaint_count = Column(Integer, default=0)
     construction_nearby = Column(Boolean, default=False)
     tomtom_traffic_congestion = Column(Float)
-    tomtom_incidents_nearby = Column(Boolean, default=False)
-    computed_modifier = Column(Float)
+    tomtom_incidents_nearby = Column(Float, default=0.0) 
+    mta_disruption_severity = Column(Float, default=0.0)
+    dep_noise_level = Column(Float)

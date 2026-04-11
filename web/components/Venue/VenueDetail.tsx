@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays, Car, Info } from "lucide-react";
+import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays, Car, Info, Train, Maximize2 } from "lucide-react";
 import { VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
 import HourlyChart from "./HourlyChart";
 
@@ -78,6 +78,9 @@ const DETAIL_ICONS: Record<string, React.ReactNode> = {
    "Food":        <Utensils size={13} />,
    "Alcohol":     <Wine size={13} />,
    "Kid friendly":<Baby size={13} />,
+   "Noise level":  <Volume2 size={13} />,
+   "Subway":       <Train size={13} />,
+   "Size":         <Maximize2 size={13} />,
 };
 
 interface Props { data: VenueWithScore }
@@ -238,6 +241,9 @@ export default function VenueDetail({ data }: Props) {
                         ["Food", venue.serves_food ? "Yes" : "No"],
                         ["Alcohol", venue.serves_alcohol ? "Yes" : "No"],
                         ["Kid friendly", venue.kid_friendly ? "Yes" : "No"],
+                        ["Noise level", humanize(venue.noise_level_yelp)],
+                        ["Subway", venue.nearest_subway_m != null ? `${venue.nearest_subway_m} m` : null],
+                        ["Size", venue.sq_ft != null ? `${venue.sq_ft.toLocaleString()} sq ft` : null],
                      ] as [string, string | null | undefined][])
                         .filter(([, v]) => v != null)
                         .map(([label, value]) => (
@@ -259,43 +265,96 @@ export default function VenueDetail({ data }: Props) {
                   <div className="border border-dashed border-yellow-700/60 rounded-xl p-4 bg-yellow-950/30">
                      <h2 className="text-xs font-mono font-bold text-yellow-600 uppercase tracking-wide mb-3">Dev Debug</h2>
                      <div className="text-xs font-mono space-y-0.5">
-                        <p className="text-yellow-700 uppercase tracking-widest pt-1 pb-0.5">scoring</p>
+
+                        {/* ── venue static ── */}
+                        <p className="text-yellow-700 uppercase tracking-widest pt-1 pb-0.5">venue static</p>
+                        <DebugRow k="sq_ft" v={(debug?.venue_static as Record<string,unknown>)?.sq_ft} />
+                        <DebugRow k="ceiling_type" v={(debug?.venue_static as Record<string,unknown>)?.ceiling_type} />
+                        <DebugRow k="seating_type" v={(debug?.venue_static as Record<string,unknown>)?.seating_type} />
+                        <DebugRow k="music_policy" v={(debug?.venue_static as Record<string,unknown>)?.music_policy} />
+                        <DebugRow k="espresso_position" v={(debug?.venue_static as Record<string,unknown>)?.espresso_position} />
+                        <DebugRow k="serves_food" v={(debug?.venue_static as Record<string,unknown>)?.serves_food} />
+                        <DebugRow k="serves_alcohol" v={(debug?.venue_static as Record<string,unknown>)?.serves_alcohol} />
+                        <DebugRow k="noise_level_yelp" v={(debug?.venue_static as Record<string,unknown>)?.noise_level_yelp} />
+                        <DebugRow k="google_noise_estimate" v={(debug?.venue_static as Record<string,unknown>)?.google_noise_estimate} />
+                        <DebugRow k="google_review_count" v={(debug?.venue_static as Record<string,unknown>)?.google_review_count} />
+                        <DebugRow k="nearest_subway_m" v={(debug?.venue_static as Record<string,unknown>)?.nearest_subway_m} />
+                        <DebugRow k="pedestrian_volume" v={(debug?.venue_static as Record<string,unknown>)?.pedestrian_volume} />
+
+                        {/* ── computed score ── */}
+                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">computed score</p>
                         <DebugRow k="evaluated_at" v={debug?.evaluated_at} />
                         <DebugRow k="day_of_week" v={debug?.day_of_week} />
                         <DebugRow k="hour" v={debug?.hour} />
-                        <DebugRow k="score.quiet_score" v={score.quiet_score} />
-                        <DebugRow k="score.noise_score" v={100 - score.quiet_score} />
-                        <DebugRow k="score.label" v={score.label} />
-                        <DebugRow k="score.confidence" v={score.confidence} />
-                        <DebugRow k="breakdown.venue_traits" v={`${score.breakdown.venue_traits} / 40 (${((score.breakdown.venue_traits / 40) * 100).toFixed(1)}%)`} />
-                        <DebugRow k="breakdown.time_pattern" v={`${score.breakdown.time_pattern} / 50 (${((score.breakdown.time_pattern / 50) * 100).toFixed(1)}%)`} />
-                        <DebugRow k="breakdown.live_adjustment" v={`${score.breakdown.live_adjustment} / ±15`} />
-                        <DebugRow k="breakdown.traffic_penalty" v={`${score.breakdown.traffic_penalty} / 8`} />
-                        <DebugRow k="breakdown.sum_noise" v={score.breakdown.venue_traits + score.breakdown.time_pattern + score.breakdown.live_adjustment} />
+                        <DebugRow k="quiet_score" v={(debug?.computed_score as Record<string,unknown>)?.quiet_score} />
+                        <DebugRow k="noise_score" v={100 - score.quiet_score} />
+                        <DebugRow k="label" v={(debug?.computed_score as Record<string,unknown>)?.label} />
+                        <DebugRow k="confidence" v={(debug?.computed_score as Record<string,unknown>)?.confidence} />
+                        <DebugRow k="noise_raw / 115" v={(debug?.computed_score as Record<string,unknown>)?.noise_raw} />
+                        <DebugRow k="formula" v={(debug?.computed_score as Record<string,unknown>)?.formula} />
+                        <DebugRow k="bd.venue_traits" v={`${score.breakdown.venue_traits} / 40 (${((score.breakdown.venue_traits / 40) * 100).toFixed(1)}%)`} />
+                        <DebugRow k="bd.time_pattern" v={`${score.breakdown.time_pattern} / 50 (${((score.breakdown.time_pattern / 50) * 100).toFixed(1)}%)`} />
+                        <DebugRow k="bd.live_adjustment" v={`${score.breakdown.live_adjustment} / ±15`} />
+                        <DebugRow k="bd.traffic_penalty" v={`${score.breakdown.traffic_penalty} / 10`} />
+                        <DebugRow k="bd.sum_noise" v={score.breakdown.venue_traits + score.breakdown.time_pattern + score.breakdown.live_adjustment + score.breakdown.traffic_penalty} />
 
+                        {/* ── google places ── */}
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">google places</p>
                         <DebugRow k="place_id" v={(debug?.google_places as Record<string,unknown>)?.place_id} />
+                        <DebugRow k="review_count" v={(debug?.google_places as Record<string,unknown>)?.review_count} />
+                        <DebugRow k="noise_estimate_nlp" v={(debug?.google_places as Record<string,unknown>)?.noise_estimate_nlp} />
                         <DebugRow k="live_busyness" v={(debug?.google_places as Record<string,unknown>)?.live_busyness} />
-                        <DebugRow k="popular_times.busyness_avg" v={(debug?.google_places as Record<string,unknown> & { popular_times_current_hour: Record<string,unknown> })?.popular_times_current_hour?.busyness_avg} />
-                        <DebugRow k="popular_times.slots_total" v={(debug?.google_places as Record<string,unknown> & { popular_times_coverage: Record<string,unknown> })?.popular_times_coverage?.total_slots} />
+                        <DebugRow k="pt_curr.busyness_avg" v={(debug?.google_places as Record<string,unknown> & { popular_times_current_hour: Record<string,unknown> })?.popular_times_current_hour?.busyness_avg} />
+                        <DebugRow k="pt_curr.noise_estimate" v={(debug?.google_places as Record<string,unknown> & { popular_times_current_hour: Record<string,unknown> })?.popular_times_current_hour?.noise_estimate} />
+                        <DebugRow k="pt_coverage.total_slots" v={(debug?.google_places as Record<string,unknown> & { popular_times_coverage: Record<string,unknown> })?.popular_times_coverage?.total_slots} />
 
+                        {/* ── openweather ── */}
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">openweather</p>
                         <DebugRow k="weather_modifier" v={(debug?.openweather as Record<string,unknown>)?.weather_modifier} />
-                        <DebugRow k="modifier_recorded_at" v={(debug?.openweather as Record<string,unknown>)?.modifier_recorded_at} />
+                        <DebugRow k="recorded_at" v={(debug?.openweather as Record<string,unknown>)?.modifier_recorded_at} />
 
+                        {/* ── nyc open data / 311 ── */}
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">nyc open data / 311</p>
-                        <DebugRow k="nearby_event" v={String((debug?.nyc_open_data as Record<string,unknown>)?.nearby_event)} />
+                        <DebugRow k="event_count" v={(debug?.nyc_open_data as Record<string,unknown>)?.event_count} />
                         <DebugRow k="event_description" v={(debug?.nyc_open_data as Record<string,unknown>)?.event_description} />
-                        <DebugRow k="construction_nearby" v={String((debug?.nyc_open_data as Record<string,unknown>)?.construction_nearby)} />
+                        <DebugRow k="noise_complaint_count" v={(debug?.nyc_open_data as Record<string,unknown>)?.noise_complaint_count} />
+                        <DebugRow k="construction_nearby" v={(debug?.nyc_open_data as Record<string,unknown>)?.construction_nearby} />
 
+                        {/* ── mta ── */}
+                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">mta</p>
+                        <DebugRow k="disruption_severity" v={(debug?.mta as Record<string,unknown>)?.disruption_severity} />
+                        <DebugRow k="severity_label" v={(debug?.mta as Record<string,unknown>)?.severity_label} />
+                        <DebugRow k="score_impact" v={(debug?.mta as Record<string,unknown>)?.score_impact} />
+
+                        {/* ── dep noise ── */}
+                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">dep ambient noise</p>
+                        <DebugRow k="ambient_level" v={(debug?.dep_noise as Record<string,unknown>)?.ambient_level} />
+                        <DebugRow k="score_impact" v={(debug?.dep_noise as Record<string,unknown>)?.score_impact} />
+
+                        {/* ── tomtom ── */}
+                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">tomtom traffic</p>
+                        <DebugRow k="traffic_congestion" v={(debug?.tomtom as Record<string,unknown>)?.traffic_congestion} />
+                        <DebugRow k="congestion_label" v={(debug?.tomtom as Record<string,unknown>)?.congestion_label} />
+                        <DebugRow k="incidents_nearby" v={(debug?.tomtom as Record<string,unknown>)?.incidents_nearby} />
+                        <DebugRow k="traffic_penalty" v={(debug?.tomtom as Record<string,unknown>)?.traffic_penalty} />
+
+                        {/* ── realtime snapshot ── */}
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">realtime snapshot</p>
                         <DebugRow k="modifier_id" v={(debug?.realtime_snapshot as Record<string,unknown>)?.modifier_id} />
                         <DebugRow k="timestamp" v={(debug?.realtime_snapshot as Record<string,unknown>)?.timestamp} />
+                        <DebugRow k="age_minutes" v={(debug?.realtime_snapshot as Record<string,unknown>)?.age_minutes} />
+                        <DebugRow k="google_live_busyness" v={(debug?.realtime_snapshot as Record<string,unknown>)?.google_live_busyness} />
+                        <DebugRow k="weather_modifier" v={(debug?.realtime_snapshot as Record<string,unknown>)?.weather_modifier} />
+                        <DebugRow k="event_count" v={(debug?.realtime_snapshot as Record<string,unknown>)?.event_count} />
+                        <DebugRow k="event_description" v={(debug?.realtime_snapshot as Record<string,unknown>)?.event_description} />
+                        <DebugRow k="noise_complaint_count" v={(debug?.realtime_snapshot as Record<string,unknown>)?.noise_complaint_count} />
+                        <DebugRow k="construction_nearby" v={(debug?.realtime_snapshot as Record<string,unknown>)?.construction_nearby} />
+                        <DebugRow k="tomtom_congestion" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_traffic_congestion} />
+                        <DebugRow k="tomtom_incidents" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_incidents_nearby} />
+                        <DebugRow k="mta_disruption_severity" v={(debug?.realtime_snapshot as Record<string,unknown>)?.mta_disruption_severity} />
+                        <DebugRow k="dep_noise_level" v={(debug?.realtime_snapshot as Record<string,unknown>)?.dep_noise_level} />
 
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">tomtom traffic</p>
-                        <DebugRow k="traffic_congestion" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_traffic_congestion} />
-                        <DebugRow k="incidents_nearby" v={String((debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_incidents_nearby)} />
-
+                        {/* ── user signals ── */}
                         <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">user signals (last 5)</p>
                         {debug && (debug.user_signals as unknown[])?.length
                            ? (debug.user_signals as Record<string,unknown>[]).map((s, i) => (

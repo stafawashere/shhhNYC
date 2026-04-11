@@ -1,7 +1,10 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from app.services import nyc_opendata
 from sqlalchemy.orm import Session
+
+_NYC_TZ = ZoneInfo("America/New_York")
 from sqlalchemy import cast
 from geoalchemy2 import Geography
 from geoalchemy2.functions import ST_DWithin, ST_MakePoint, ST_Distance
@@ -29,6 +32,8 @@ def venue_to_dict(v: Venue) -> dict:
         "wifi_quality": v.wifi_quality, "wifi_policy": v.wifi_policy,
         "serves_food": v.serves_food, "serves_alcohol": v.serves_alcohol,
         "kid_friendly": v.kid_friendly, "price_tier": v.price_tier,
+        "noise_level_yelp": v.noise_level_yelp,
+        "nearest_subway_m": v.nearest_subway_m,
         "google_place_id": v.google_place_id,
         "lat": point.y, "lng": point.x,
     }
@@ -65,12 +70,15 @@ def get_venue(venue_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{venue_id}/predict", response_model=ScoreResponse)
-def predict_venue(venue_id: str, hour: int, db: Session = Depends(get_db)):
+def predict_venue(venue_id: str, hour: int, day: int | None = None, db: Session = Depends(get_db)):
     venue = db.query(Venue).filter(Venue.id == venue_id).first()
     if not venue:
         raise HTTPException(status_code=404, detail="Venue not found")
-    dt = datetime.now().replace(hour=hour)
-    return quiet_score(db, venue, dt)
+    now = datetime.now(_NYC_TZ)
+    target_day = day if day is not None else now.weekday()
+    days_ahead = (target_day - now.weekday()) % 7
+    dt = (now + timedelta(days=days_ahead)).replace(hour=hour, minute=0, second=0, microsecond=0)
+    return quiet_score(db, venue, dt, include_realtime=False)
 
 
 @router.get("/{venue_id}/hourly")
@@ -79,7 +87,7 @@ def get_hourly(venue_id: str, day: int | None = None, db: Session = Depends(get_
     if not venue:
         raise HTTPException(status_code=404, detail="Venue not found")
 
-    target_day = day if day is not None else datetime.now().weekday()
+    target_day = day if day is not None else datetime.now(_NYC_TZ).weekday()
     profiles = (
         db.query(VenueHourlyProfile)
         .filter(
@@ -91,7 +99,7 @@ def get_hourly(venue_id: str, day: int | None = None, db: Session = Depends(get_
     )
     return {
         "day_of_week": target_day,
-        "current_hour": datetime.now().hour,
+        "current_hour": datetime.now(_NYC_TZ).hour,
         "slots": [{"hour": p.hour, "busyness": p.busyness_avg or 0} for p in profiles],
     }
 
@@ -102,7 +110,7 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
     if not venue:
         raise HTTPException(status_code=404, detail="Venue not found")
 
-    now = datetime.now()  # local time — matches what scoring engine uses
+    now = datetime.now(_NYC_TZ)
 
     rt = (
         db.query(RealtimeModifier)
@@ -136,20 +144,81 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
         .all()
     )
 
+    computed = quiet_score(db, venue)
+    bd = computed["breakdown"]
+    noise_raw = bd["venue_traits"] + bd["time_pattern"] + bd["live_adjustment"] + bd["traffic_penalty"]
+
+    mta_sev = (rt.mta_disruption_severity or 0.0) if rt else None
+    dep_lvl = rt.dep_noise_level if rt else None
+
+    def mta_label(s: float | None) -> str | None:
+        if s is None:
+            return None
+        if s < 0.5:
+            return "Good service"
+        if s < 1.5:
+            return "Minor delays"
+        if s < 2.5:
+            return "Significant delays"
+        if s < 3.5:
+            return "Severe disruption"
+        return "Service suspended"
+
+    def tc_label(tc: float | None) -> str | None:
+        if tc is None:
+            return None
+        if tc >= 0.8:
+            return "Free flow"
+        if tc >= 0.5:
+            return "Moderate"
+        if tc >= 0.3:
+            return "Heavy"
+        return "Severe"
+
     return {
         "evaluated_at": now.isoformat(),
         "day_of_week": now.weekday(),
         "hour": now.hour,
 
+        "venue_static": {
+            "sq_ft": venue.sq_ft,
+            "ceiling_type": venue.ceiling_type,
+            "music_policy": venue.music_policy,
+            "seating_type": venue.seating_type,
+            "espresso_position": venue.espresso_position,
+            "serves_food": venue.serves_food,
+            "serves_alcohol": venue.serves_alcohol,
+            "noise_level_yelp": venue.noise_level_yelp,
+            "google_noise_estimate": venue.google_noise_estimate,
+            "google_review_count": venue.google_review_count,
+            "nearest_subway_m": venue.nearest_subway_m,
+            "pedestrian_volume": venue.pedestrian_volume,
+        },
+
+        "computed_score": {
+            "quiet_score": computed["quiet_score"],
+            "label": computed["label"],
+            "confidence": round(computed["confidence"], 4),
+            "noise_raw": round(noise_raw, 2),
+            "formula": "100 - (noise_raw / 115 × 100)",
+            "breakdown": {
+                "venue_traits": round(bd["venue_traits"], 2),
+                "time_pattern": round(bd["time_pattern"], 2),
+                "live_adjustment": round(bd["live_adjustment"], 2),
+                "traffic_penalty": round(bd["traffic_penalty"], 2),
+            },
+        },
+
         "google_places": {
             "place_id": venue.google_place_id,
+            "review_count": venue.google_review_count,
+            "noise_estimate_nlp": venue.google_noise_estimate,
             "live_busyness": rt.google_live_busyness if rt else None,
             "popular_times_current_hour": {
                 "day": profile.day_of_week if profile else None,
                 "hour": profile.hour if profile else None,
                 "busyness_avg": profile.busyness_avg if profile else None,
                 "noise_estimate": profile.noise_estimate if profile else None,
-                "confidence": profile.confidence if profile else None,
             },
             "popular_times_coverage": {
                 "total_slots": len(all_profiles),
@@ -167,21 +236,44 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
         },
 
         "nyc_open_data": {
-            "nearby_event": rt.nearby_event if rt else None,
+            "event_count": rt.event_count if rt else None,
             "event_description": rt.event_description if rt else None,
+            "noise_complaint_count": rt.noise_complaint_count if rt else None,
             "construction_nearby": rt.construction_nearby if rt else None,
+        },
+
+        "mta": {
+            "disruption_severity": mta_sev,
+            "severity_label": mta_label(mta_sev),
+            "score_impact": round(min(3.2, mta_sev * 0.8), 2) if mta_sev is not None else None,
+        },
+
+        "dep_noise": {
+            "ambient_level": dep_lvl,
+            "score_impact": round(max(-2.0, min(3.5, (dep_lvl - 45) / 35 * 3.5)), 2) if dep_lvl is not None else None,
+        },
+
+        "tomtom": {
+            "traffic_congestion": rt.tomtom_traffic_congestion if rt else None,
+            "congestion_label": tc_label(rt.tomtom_traffic_congestion if rt else None),
+            "incidents_nearby": rt.tomtom_incidents_nearby if rt else None,
+            "traffic_penalty": round(bd["traffic_penalty"], 2),
         },
 
         "realtime_snapshot": {
             "modifier_id": rt.id if rt else None,
             "timestamp": rt.timestamp.isoformat() if rt else None,
-            "computed_modifier": rt.computed_modifier if rt else None,
+            "age_minutes": round((now - rt.timestamp.astimezone(_NYC_TZ)).total_seconds() / 60) if rt else None,
             "google_live_busyness": rt.google_live_busyness if rt else None,
             "weather_modifier": rt.weather_modifier if rt else None,
-            "nearby_event": rt.nearby_event if rt else None,
+            "event_count": rt.event_count if rt else None,
+            "event_description": rt.event_description if rt else None,
+            "noise_complaint_count": rt.noise_complaint_count if rt else None,
             "construction_nearby": rt.construction_nearby if rt else None,
             "tomtom_traffic_congestion": rt.tomtom_traffic_congestion if rt else None,
             "tomtom_incidents_nearby": rt.tomtom_incidents_nearby if rt else None,
+            "mta_disruption_severity": rt.mta_disruption_severity if rt else None,
+            "dep_noise_level": rt.dep_noise_level if rt else None,
         },
 
         "user_signals": [

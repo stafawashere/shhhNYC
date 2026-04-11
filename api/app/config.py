@@ -1,4 +1,7 @@
+import os
 from pydantic_settings import BaseSettings
+
+_ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 
 class Settings(BaseSettings):
@@ -13,7 +16,7 @@ class Settings(BaseSettings):
     tomtom_api_key: str = ""
 
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILE
 
 
 settings = Settings()

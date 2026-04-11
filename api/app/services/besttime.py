@@ -114,7 +114,6 @@ def get_live_busyness(besttime_venue_id: str) -> float | None:
 
 
 def week_to_hourly_matrix(analysis: list[dict]) -> dict[int, dict[int, float]]:
-    # day_int 0=Monday matches python weekday; skip closed hours (999)
     matrix: dict[int, dict[int, float]] = {}
     for day in analysis:
         day_int = day["day_info"]["day_int"]
