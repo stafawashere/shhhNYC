@@ -8,11 +8,12 @@ from app.db.queries import (
     get_latest_realtime,
     count_recent_signals,
     count_profile_slots,
-    signal_confidence,
-    get_user_signal_avg,
+    get_signal_metrics,
+    _compute_signal_confidence,
+    _compute_user_avg,
 )
 from app.scoring.static import static_score
-from app.scoring.temporal import temporal_score
+from app.scoring.temporal import temporal_score, temporal_score_from_data
 from app.scoring.realtime import realtime_score
 
 _NYC_TZ = ZoneInfo("America/New_York")
@@ -105,24 +106,9 @@ def _get_complaint_baseline(venue_id) -> float:
         return 0.0
 
 
-def quiet_score(db: Session, venue: Venue, dt: datetime = None, include_realtime: bool = True) -> dict:
-    dt = dt or datetime.now(_NYC_TZ)
-
-    profile = get_hourly_profile(db, venue.id, dt.hour, dt.weekday())
-    rt_row = get_latest_realtime(db, venue.id) if include_realtime else None
-    signal_count = count_recent_signals(db, venue.id)
-    slot_count = count_profile_slots(db, venue.id)
-    sig_score = signal_confidence(db, venue.id, dt=dt)
-    user_avg = get_user_signal_avg(db, venue.id, dt=dt)
-    complaint_baseline = _get_complaint_baseline(venue.id) if include_realtime else 0.0
-
-    s = static_score(venue)
-    t = temporal_score(db, profile, venue, dt, signal_count)
-    r, tp = realtime_score(venue, rt_row, profile, complaint_baseline) if include_realtime else (0.0, 0.0)
-
+def _build_score_dict(venue: Venue, profile, rt_row, slot_count: int, sig_score: float, user_avg: float | None, s: float, t: float, r: float, tp: float) -> dict:
     noise_raw = max(0.0, s + t + r + tp)
     score = max(0.0, min(100.0, 100.0 - (noise_raw / _MAX_NOISE) * 100.0))
-
     return {
         "quiet_score": round(score),
         "label": score_to_label(score),
@@ -142,3 +128,32 @@ def quiet_score(db: Session, venue: Venue, dt: datetime = None, include_realtime
         },
         "traffic_congestion": rt_row.tomtom_traffic_congestion if rt_row else None,
     }
+
+
+def quiet_score(db: Session, venue: Venue, dt: datetime = None, include_realtime: bool = True) -> dict:
+    dt = dt or datetime.now(_NYC_TZ)
+
+    profile          = get_hourly_profile(db, venue.id, dt.hour, dt.weekday())
+    rt_row           = get_latest_realtime(db, venue.id) if include_realtime else None
+    signal_count     = count_recent_signals(db, venue.id)
+    slot_count       = count_profile_slots(db, venue.id)
+    sig_score, user_avg = get_signal_metrics(db, venue.id, dt=dt)
+    complaint_baseline = _get_complaint_baseline(venue.id) if include_realtime else 0.0
+
+    s = static_score(venue)
+    t = temporal_score(db, profile, venue, dt, signal_count)
+    r, tp = realtime_score(venue, rt_row, profile, complaint_baseline) if include_realtime else (0.0, 0.0)
+
+    return _build_score_dict(venue, profile, rt_row, slot_count, sig_score, user_avg, s, t, r, tp)
+
+
+def quiet_score_from_data(venue: Venue, dt: datetime, profile, rt_row, slot_count: int, recent_signals: list, dow_signals: list, complaint_baseline: float) -> dict:
+    now = datetime.now(_NYC_TZ)
+    sig_score = _compute_signal_confidence(recent_signals, dow_signals, now)
+    user_avg  = _compute_user_avg(recent_signals, dow_signals, now)
+
+    s = static_score(venue)
+    t = temporal_score_from_data(profile, venue, dt, recent_signals, dow_signals)
+    r, tp = realtime_score(venue, rt_row, profile, complaint_baseline)
+
+    return _build_score_dict(venue, profile, rt_row, slot_count, sig_score, user_avg, s, t, r, tp)

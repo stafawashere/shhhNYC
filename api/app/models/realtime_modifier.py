@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Float, Boolean, Integer, Text, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, Float, Boolean, Integer, Text, TIMESTAMP, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import func
 from app.db.session import Base
@@ -7,6 +7,9 @@ from app.db.session import Base
 
 class RealtimeModifier(Base):
     __tablename__ = "realtime_modifiers"
+    __table_args__ = (
+        Index("idx_rt_mod_venue_timestamp", "venue_id", "timestamp"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     venue_id = Column(UUID, ForeignKey("venues.id"), nullable=False)

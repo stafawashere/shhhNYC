@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Wifi, Music2, ChevronsUp, Coffee, Armchair, DollarSign, Zap, Utensils, Wine, Baby, Lock, HardHat, Volume2, CalendarDays, Car, Info, Train, Maximize2 } from "lucide-react";
-import { VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
+import { API_BASE, VenueWithScore, VenueWarning, getVenueDebug, getVenueHourly, getVenueWarnings } from "@/lib/api";
 import HourlyChart from "./HourlyChart";
 
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -74,7 +74,7 @@ function BigNum({ value, suffix, health = "neutral" }: {
 
 function Pill({ label, health }: { label: string; health: Health }) {
    return (
-      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${H[health].pill}`}>{label}</span>
+      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${H[health].pill}`}>{label}</span>
    );
 }
 
@@ -181,13 +181,13 @@ export default function VenueDetail({ data }: Props) {
       <div className="flex flex-col gap-1.5 shrink-0">
          {warnings.map((w, i) => {
             const cfg = {
-               high:   { bg: "bg-orange-950/70 border-orange-700/50 text-orange-300", icon: <HardHat size={11} className="text-orange-400 shrink-0" /> },
-               medium: { bg: "bg-yellow-950/70 border-yellow-700/50 text-yellow-300", icon: <Volume2 size={11} className="text-yellow-400 shrink-0" /> },
-               low:    { bg: "bg-blue-950/70 border-blue-700/50 text-blue-300",       icon: <CalendarDays size={11} className="text-blue-400 shrink-0" /> },
+               high:   { bg: "bg-orange-950/70 border-orange-700/50 text-orange-300", icon: <HardHat size={14} className="text-orange-400 shrink-0" /> },
+               medium: { bg: "bg-yellow-950/70 border-yellow-700/50 text-yellow-300", icon: <Volume2 size={14} className="text-yellow-400 shrink-0" /> },
+               low:    { bg: "bg-blue-950/70 border-blue-700/50 text-blue-300",       icon: <CalendarDays size={14} className="text-blue-400 shrink-0" /> },
             }[w.severity];
             const shortLabel = w.type === "construction" ? "Construction" : w.type === "noise_complaints" ? "Noise alert" : "Nearby event";
-            return (
-               <div key={i} className={`group relative flex items-center gap-3 px-3 py-1 rounded-lg border text-[10px] font-semibold cursor-default whitespace-nowrap ${cfg.bg}`}>
+               return (
+                  <div key={i} className={`group relative flex items-center gap-3 px-3.5 py-1.5 rounded-lg border text-[12px] font-bold cursor-default whitespace-nowrap ${cfg.bg}`}>
                   {cfg.icon}
                   <span>{shortLabel}</span>
                   <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-52 p-2 rounded-lg bg-zinc-800 text-zinc-300 text-[11px] leading-snug shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all border border-zinc-700 z-20 pointer-events-none">
@@ -215,7 +215,7 @@ export default function VenueDetail({ data }: Props) {
                {venue.photos.map((_, i) => (
                   <img
                      key={i}
-                     src={`/api/venues/${venue.id}/photo/${i}`}
+                     src={`${API_BASE}/venues/${venue.id}/photo/${i}`}
                      alt={`${venue.name} photo ${i + 1}`}
                      className="h-40 w-auto rounded-xl object-cover shrink-0 flex-1 min-w-0"
                      style={{ maxWidth: "60vw" }}
@@ -229,8 +229,8 @@ export default function VenueDetail({ data }: Props) {
 
             {/* warnings: absolutely outside the content flow, no width taken */}
             {warnings.length > 0 && (
-               <div className="absolute right-full top-0 mr-8 flex flex-col gap-1.5">
-                  <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-1">Alerts</h2>
+               <div className="absolute right-full top-0 mr-8 flex flex-col gap-2">
+                  <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Alerts</h2>
                   {warningBadges}
                </div>
             )}

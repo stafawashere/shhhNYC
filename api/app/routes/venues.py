@@ -15,8 +15,8 @@ from app.models.venue import Venue
 from app.models.hourly_profile import VenueHourlyProfile
 from app.models.realtime_modifier import RealtimeModifier
 from app.models.user_signal import UserSignal
-from app.scoring.composite import quiet_score, _get_complaint_baseline
-from app.db.queries import count_recent_signals, signal_confidence, get_user_signal_avg
+from app.scoring.composite import quiet_score, quiet_score_from_data, _get_complaint_baseline
+from app.db.queries import count_recent_signals, signal_confidence, get_user_signal_avg, bulk_load_scoring_data
 from app.scoring.static import static_completeness
 from app.schemas.venue import VenueWithScore, ScoreResponse
 from app.schemas.requests import SubmitSignalRequest
@@ -45,6 +45,8 @@ def venue_to_dict(v: Venue) -> dict:
 
 @router.get("/nearby", response_model=list[VenueWithScore])
 def get_nearby_venues(lat: float, lng: float, radius: float = 0.5, limit: int = 20, db: Session = Depends(get_db)):
+    dt = datetime.now(_NYC_TZ)
+
     point = cast(ST_MakePoint(lng, lat), Geography)
     venues = (
         db.query(Venue)
@@ -53,7 +55,29 @@ def get_nearby_venues(lat: float, lng: float, radius: float = 0.5, limit: int = 
         .limit(limit)
         .all()
     )
-    return [{"venue": venue_to_dict(v), "score": quiet_score(db, v)} for v in venues]
+
+    if not venues:
+        return []
+
+    venue_ids = [v.id for v in venues]
+    bulk = bulk_load_scoring_data(db, venue_ids, dt)
+
+    results = []
+    for v in venues:
+        vid = str(v.id)
+        score = quiet_score_from_data(
+            venue=v,
+            dt=dt,
+            profile=bulk.profile_map.get(vid),
+            rt_row=bulk.rt_map.get(vid),
+            slot_count=bulk.slot_count_map.get(vid, 0),
+            recent_signals=bulk.recent_signals_map.get(vid, []),
+            dow_signals=bulk.dow_signals_map.get(vid, []),
+            complaint_baseline=bulk.complaint_map.get(vid, 0.0),
+        )
+        results.append({"venue": venue_to_dict(v), "score": score})
+
+    return results
 
 
 @router.get("/search", response_model=list[VenueWithScore])

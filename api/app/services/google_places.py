@@ -2,7 +2,28 @@ import httpx
 from app.config import settings
 
 _BASE  = "https://maps.googleapis.com/maps/api/place/details/json"
+_SEARCH = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 _PHOTO = "https://maps.googleapis.com/maps/api/place/photo"
+
+
+def find_place_id(name: str, address: str) -> str | None:
+    if not settings.google_places_api_key:
+        return None
+
+    params = {
+        "input": f"{name} {address}",
+        "inputtype": "textquery",
+        "fields": "place_id",
+        "key": settings.google_places_api_key,
+    }
+    try:
+        resp = httpx.get(_SEARCH, params={"input": f"{name} {address}", "inputtype": "textquery", "fields": "place_id", "key": settings.google_places_api_key}, timeout=10)
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        return candidates[0]["place_id"] if candidates else None
+    except Exception:
+        return None
+
 
 
 def _get_place_details(place_id: str) -> dict | None:
@@ -74,6 +95,16 @@ def get_photo_references(place_id: str, max_photos: int = 3) -> list[str]:
 def fetch_photo(photo_reference: str, max_width: int = 800) -> bytes | None:
     if not settings.google_places_api_key:
         return None
+
+    if photo_reference.startswith("http"):
+        try:
+            r = httpx.get(photo_reference, follow_redirects=True, timeout=15)
+            if r.status_code == 200:
+                return r.content
+            return None
+        except httpx.HTTPError:
+            return None
+
     try:
         r = httpx.get(
             _PHOTO,
@@ -86,6 +117,7 @@ def fetch_photo(photo_reference: str, max_width: int = 800) -> bytes | None:
         return None
     except httpx.HTTPError:
         return None
+
 
 
 def get_popular_times(place_id: str) -> dict[int, dict[int, float]] | None:

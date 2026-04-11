@@ -431,16 +431,24 @@ def refresh_pedestrian_counts():
 
 
 @celery.task
-def refresh_venue_photos():
-    if not _throttle("venue_photos", cooldown_seconds=86400 * 7): return
+def refresh_venue_photos(force: bool = False):
+    if not force and not _throttle("venue_photos", cooldown_seconds=86400 * 7): 
+        return
 
     db = SessionLocal()
     try:
+        updated_count = 0
         for venue in _all_venues(db):
+            if not venue.google_place_id:
+                continue
+                
             refs = google_places.get_photo_references(venue.google_place_id, max_photos=3)
             if refs:
                 venue.photos = refs
-        db.commit()
+                updated_count += 1
+        
+        if updated_count > 0:
+            db.commit()
     finally:
         db.close()
 
