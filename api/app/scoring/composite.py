@@ -63,16 +63,9 @@ def _consensus_bonus(venue: Venue, user_avg: float | None) -> float:
     return 0.0
 
 
-def compute_confidence(
-    venue: Venue,
-    profile,
-    rt_row,
-    slot_count: int,
-    sig_score: float,
-    user_avg: float | None = None,
-) -> float:
+def compute_confidence(venue: Venue, profile, rt_row, slot_count: int, sig_score: float, user_avg: float | None = None,) -> float:
     if slot_count > 0:
-        score = 0.10 + 0.35 * min(1.0, slot_count / 48)
+        score = 0.05 + 0.25 * min(1.0, slot_count / 112)
     else:
         score = 0.00
 
@@ -80,21 +73,20 @@ def compute_confidence(
         score += 0.05
 
     if venue.noise_level_yelp is not None:
-        score += 0.10
+        score += 0.08
 
     if venue.google_noise_estimate is not None:
-        score += 0.10 * _review_count_factor(venue.google_review_count)
+        score += 0.07 * _review_count_factor(venue.google_review_count)
 
     if rt_row is not None:
         age_min = (datetime.now(_NYC_TZ) - rt_row.timestamp.astimezone(_NYC_TZ)).total_seconds() / 60
-        if age_min < 30:    score += 0.25
-        elif age_min < 90:  score += 0.15
-        elif age_min < 360: score += 0.05
+        if age_min < 30:    score += 0.18
+        elif age_min < 90:  score += 0.10
+        elif age_min < 360: score += 0.03
 
-        if rt_row.tomtom_traffic_congestion is not None: score += 0.10
-        if rt_row.weather_modifier is not None:          score += 0.05
-        if rt_row.google_live_busyness is not None:      score += 0.05
-        if rt_row.dep_noise_level is not None:           score += 0.15
+        if rt_row.tomtom_traffic_congestion is not None: score += 0.07
+        if rt_row.google_live_busyness is not None:      score += 0.04
+        if rt_row.dep_noise_level is not None:           score += 0.10
 
     score += sig_score
     score += _consensus_bonus(venue, user_avg)

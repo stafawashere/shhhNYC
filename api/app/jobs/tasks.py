@@ -295,7 +295,7 @@ def refresh_google_review_noise():
         for venue in _all_venues(db):
             reviews, review_count = google_places.get_review_data(venue.google_place_id)
 
-            if review_count:
+            if review_count is not None:
                 venue.google_review_count = review_count
 
             if not reviews:

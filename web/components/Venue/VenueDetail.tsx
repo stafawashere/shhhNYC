@@ -22,13 +22,73 @@ const SCORE_COLORS: Record<string, { ring: string; badge: string; bar: string }>
    "Very Loud":  { ring: "#ef4444", badge: "bg-red-900/40 text-red-300",         bar: "bg-red-500" },
 };
 
-// breakdown values are noise penalties — invert to show quiet contribution
 const BREAKDOWN_CONFIG = [
    { key: "venue_traits" as const,    label: "Space",       max: 40, color: "bg-violet-500", tooltip: <>Acoustic baseline from the venue's physical architecture, seating, and music policy.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Excellent acoustic dampening.<br/><strong className="text-zinc-300">Lower:</strong> Echo-heavy spaces with loud music.</div></> },
-   { key: "time_pattern" as const,    label: "Time",        max: 50, color: "bg-blue-500", tooltip: <>Historical busyness based on Google foot-traffic models for this specific day and hour.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Historically empty right now.<br/><strong className="text-zinc-300">Lower:</strong> Historically swamped right now.</div></> },
-   { key: "live_adjustment" as const, label: "Live signal", max: 15, color: "bg-cyan-500", isModifier: true, tooltip: <>Live fluctuations in local weather, 311 noise complaints, construction, and foot traffic spikes.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Positive (+):</strong> Quieter than normal (e.g. raining).<br/><strong className="text-zinc-300">Negative (-):</strong> Very noisy (e.g. active construction or large crowd).</div></> },
-   { key: "traffic_penalty" as const, label: "Traffic",     max: 10,  color: "bg-amber-500", tooltip: <>A geographic penalty based on instantaneous traffic flow speeds mapped by TomTom.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Traffic is smoothly flowing or empty.<br/><strong className="text-zinc-300">Lower:</strong> Cars are backed up with potential honking.</div></> },
+   { key: "time_pattern" as const,    label: "Time",        max: 50, color: "bg-blue-500",   tooltip: <>Historical busyness based on Google foot-traffic models for this specific day and hour.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Historically empty right now.<br/><strong className="text-zinc-300">Lower:</strong> Historically swamped right now.</div></> },
+   { key: "live_adjustment" as const, label: "Live signal", max: 15, color: "bg-cyan-500",   isModifier: true, tooltip: <>Live fluctuations in local weather, 311 noise complaints, construction, and foot traffic spikes.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Positive (+):</strong> Quieter than normal (e.g. raining).<br/><strong className="text-zinc-300">Negative (-):</strong> Very noisy (e.g. active construction or large crowd).</div></> },
+   { key: "traffic_penalty" as const, label: "Traffic",     max: 10, color: "bg-amber-500",  tooltip: <>A geographic penalty based on instantaneous traffic flow speeds mapped by TomTom.<div className="mt-2 text-zinc-400"><strong className="text-zinc-300">Higher:</strong> Traffic is smoothly flowing or empty.<br/><strong className="text-zinc-300">Lower:</strong> Cars are backed up with potential honking.</div></> },
 ];
+
+// ── debug card system ────────────────────────────────────────────────────────
+
+type Health = "good" | "warn" | "bad" | "neutral";
+
+const H: Record<Health, { border: string; bg: string; pill: string; num: string }> = {
+   good:    { border: "border-emerald-500/25", bg: "bg-emerald-500/5",  pill: "bg-emerald-900/70 text-emerald-300", num: "text-emerald-300" },
+   warn:    { border: "border-yellow-500/25",  bg: "bg-yellow-500/5",   pill: "bg-yellow-900/70 text-yellow-300",   num: "text-yellow-300"  },
+   bad:     { border: "border-red-500/25",     bg: "bg-red-500/5",      pill: "bg-red-900/70 text-red-300",         num: "text-red-400"     },
+   neutral: { border: "border-zinc-700/40",    bg: "bg-zinc-800/20",    pill: "bg-zinc-800 text-zinc-400",           num: "text-zinc-100"    },
+};
+
+function DbCard({ title, health = "neutral", children, full }: {
+   title: string; health?: Health; children: React.ReactNode; full?: boolean;
+}) {
+   const h = H[health];
+   return (
+      <div className={`rounded-xl border p-3 ${h.border} ${h.bg} ${full ? "col-span-2" : ""}`}>
+         <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-600 mb-2 flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+               health === "good" ? "bg-emerald-500" : health === "warn" ? "bg-yellow-400" : health === "bad" ? "bg-red-500" : "bg-zinc-600"
+            }`} />
+            {title}
+         </p>
+         {children}
+      </div>
+   );
+}
+
+function BigNum({ value, suffix, health = "neutral" }: {
+   value: string | number | null | undefined; suffix?: string; health?: Health;
+}) {
+   const h = H[health];
+   if (value === null || value === undefined) {
+      return <span className="text-3xl font-black text-zinc-700 leading-none">—</span>;
+   }
+   return (
+      <p className="leading-none">
+         <span className={`text-3xl font-black ${h.num}`}>{value}</span>
+         {suffix && <span className="text-xs text-zinc-500 ml-1">{suffix}</span>}
+      </p>
+   );
+}
+
+function Pill({ label, health }: { label: string; health: Health }) {
+   return (
+      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${H[health].pill}`}>{label}</span>
+   );
+}
+
+function Row({ k, v }: { k: string; v: unknown }) {
+   const display = v === null || v === undefined ? "—" : String(v);
+   return (
+      <div className="flex justify-between items-baseline gap-1 text-[10px]">
+         <span className="text-zinc-600 uppercase tracking-wide shrink-0">{k}</span>
+         <span className="text-zinc-400 font-medium text-right truncate max-w-[60%]" title={display}>{display}</span>
+      </div>
+   );
+}
+
+// ── main component ───────────────────────────────────────────────────────────
 
 function ScoreRing({ score, color }: { score: number; color: string }) {
    const r = 44;
@@ -37,32 +97,13 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
    return (
       <svg width={104} height={104} className="rotate-[-90deg]">
          <circle cx={52} cy={52} r={r} fill="none" stroke="#27272a" strokeWidth={10} />
-         <circle
-            cx={52} cy={52} r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth={10}
-            strokeDasharray={circ}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 0.6s ease" }}
-         />
+         <circle cx={52} cy={52} r={r} fill="none" stroke={color} strokeWidth={10}
+            strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+            style={{ transition: "stroke-dashoffset 0.6s ease" }} />
          <text x={52} y={57} textAnchor="middle" dominantBaseline="middle"
             transform="rotate(90, 52, 52)"
-            style={{ fill: "#f4f4f5", fontSize: 26, fontWeight: 800 }}>
-            {score}
-         </text>
+            style={{ fill: "#f4f4f5", fontSize: 26, fontWeight: 800 }}>{score}</text>
       </svg>
-   );
-}
-
-function DebugRow({ k, v }: { k: string; v: unknown }) {
-   const display = v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
-   return (
-      <div className="flex gap-2 border-b border-yellow-900/40 py-0.5">
-         <span className="text-yellow-600 shrink-0 w-56">{k}</span>
-         <span className="text-yellow-300 font-bold truncate" title={display}>{display}</span>
-      </div>
    );
 }
 
@@ -103,21 +144,48 @@ export default function VenueDetail({ data }: Props) {
       ? (() => { try { return formatDistanceToNow(new Date(debug.evaluated_at as string), { addSuffix: true }); } catch { return null; } })()
       : null;
 
+   const bd = score.breakdown;
+   const noiseRaw = bd.venue_traits + bd.time_pattern + bd.live_adjustment + bd.traffic_penalty;
+
+   // typed debug sub-objects
+   const gp  = debug?.google_places         as Record<string, unknown> | undefined;
+   const rt  = debug?.realtime_snapshot     as Record<string, unknown> | undefined;
+   const mta = debug?.mta                   as Record<string, unknown> | undefined;
+   const tt  = debug?.tomtom               as Record<string, unknown> | undefined;
+   const dep = debug?.dep_noise             as Record<string, unknown> | undefined;
+   const od  = debug?.nyc_open_data         as Record<string, unknown> | undefined;
+   const vs  = debug?.venue_static          as Record<string, unknown> | undefined;
+   const cs  = debug?.computed_score        as Record<string, unknown> | undefined;
+   const usc = debug?.user_signals_computed as Record<string, unknown> | undefined;
+   const signals = debug?.user_signals      as Record<string, unknown>[] | undefined;
+
+   const ageMin    = rt?.age_minutes   as number | null | undefined;
+   const mtaSev    = mta?.disruption_severity as number | null | undefined;
+   const congestion = tt?.traffic_congestion  as number | null | undefined;
+   const depLevel  = dep?.ambient_level       as number | null | undefined;
+   const eventCount    = (od?.event_count    as number) ?? 0;
+   const complaintCount = (od?.noise_complaint_count as number) ?? 0;
+   const construction  = od?.construction_nearby as boolean;
+
+   // health derivations
+   const scoreHealth: Health  = score.quiet_score >= 60 ? "good" : score.quiet_score >= 40 ? "warn" : "bad";
+   const gpHealth: Health     = gp?.place_id ? (gp?.review_count ? "good" : "warn") : "bad";
+   const rtHealth: Health     = ageMin == null ? "neutral" : ageMin < 5 ? "good" : ageMin < 30 ? "warn" : "bad";
+   const mtaHealth: Health    = mtaSev == null ? "neutral" : mtaSev < 0.5 ? "good" : mtaSev < 2.5 ? "warn" : "bad";
+   const ttHealth: Health     = congestion == null ? "neutral" : congestion >= 0.8 ? "good" : congestion >= 0.5 ? "warn" : "bad";
+   const depHealth: Health    = depLevel == null ? "neutral" : depLevel < 60 ? "good" : depLevel < 80 ? "warn" : "bad";
+   const odHealth: Health     = (eventCount > 10 || complaintCount > 3 || construction) ? "bad" : (eventCount > 0 || complaintCount > 0) ? "warn" : "good";
+
    return (
       <div className={`${IS_DEV ? "max-w-5xl" : "max-w-xl"} mx-auto px-5 py-8 text-zinc-100`}>
          <div className={IS_DEV ? "flex flex-col md:flex-row gap-8 md:items-start" : ""}>
 
-            {/* main content */}
+            {/* ── main content ── */}
             <div className="flex-1 min-w-0">
-               <Link
-                  href="/"
-                  className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-zinc-50 transition-colors py-1"
-               >
-                  <ArrowLeft size={15} />
-                  Back to map
+               <Link href="/" className="inline-flex items-center gap-2 text-sm text-zinc-300 hover:text-zinc-50 transition-colors py-1">
+                  <ArrowLeft size={15} />Back to map
                </Link>
 
-               {/* warnings */}
                {warnings.length > 0 && (
                   <div className="mt-4 flex flex-col gap-2">
                      {warnings.map((w, i) => {
@@ -139,7 +207,6 @@ export default function VenueDetail({ data }: Props) {
                   </div>
                )}
 
-               {/* header */}
                <div className="mt-6 flex items-start gap-5">
                   <div className="flex-1 min-w-0">
                      <h1 className="text-2xl font-bold text-zinc-50 leading-tight">{venue.name}</h1>
@@ -154,22 +221,17 @@ export default function VenueDetail({ data }: Props) {
                   <ScoreRing score={score.quiet_score} color={colors.ring} />
                </div>
 
-               {/* score bar */}
                <div className="mt-4 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
                   <div className={`h-full rounded-full transition-all ${colors.bar}`} style={{ width: `${score.quiet_score}%` }} />
                </div>
 
-               {/* breakdown — values inverted so higher = quieter */}
                <div className="mt-6">
                   <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Score breakdown</h2>
                   <div className="grid grid-cols-4 gap-3">
                      {BREAKDOWN_CONFIG.map(({ key, label, max, color, isModifier, tooltip }) => {
                         const raw = score.breakdown[key];
-                        // for modifiers, invert the sign because the rest of the app displays "Quietness" logic
                         const val = isModifier ? -raw : max - raw;
-                        const pct = isModifier
-                           ? ((max - raw) / (max * 2)) * 100  // center 0 in the bar, high noise drops it
-                           : ((max - raw) / max) * 100;
+                        const pct = isModifier ? ((max - raw) / (max * 2)) * 100 : ((max - raw) / max) * 100;
                         const sign = isModifier && val > 0 ? "+" : "";
                         return (
                            <div key={key} className="bg-zinc-900 rounded-xl p-4 text-center">
@@ -215,7 +277,6 @@ export default function VenueDetail({ data }: Props) {
                   })()}
                </div>
 
-               {/* hourly chart */}
                {hourly && hourly.slots.length > 0 && (
                   <div className="mt-6">
                      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Busyness today</h2>
@@ -225,7 +286,6 @@ export default function VenueDetail({ data }: Props) {
                   </div>
                )}
 
-               {/* venue details */}
                <div className="mt-6">
                   <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Venue details</h2>
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
@@ -259,112 +319,221 @@ export default function VenueDetail({ data }: Props) {
                </div>
             </div>
 
-            {/* dev debug — desktop only, pinned right */}
+            {/* ── dev debug dashboard ── */}
             {IS_DEV && (
-               <div className="hidden md:block w-80 shrink-0 sticky top-8">
-                  <div className="border border-dashed border-yellow-700/60 rounded-xl p-4 bg-yellow-950/30">
-                     <h2 className="text-xs font-mono font-bold text-yellow-600 uppercase tracking-wide mb-3">Dev Debug</h2>
-                     <div className="text-xs font-mono space-y-0.5">
+               <div className="hidden md:block w-80 shrink-0 sticky top-8 space-y-2">
+                  <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">Dev Debug</h2>
 
-                        {/* ── venue static ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-1 pb-0.5">venue static</p>
-                        <DebugRow k="sq_ft" v={(debug?.venue_static as Record<string,unknown>)?.sq_ft} />
-                        <DebugRow k="ceiling_type" v={(debug?.venue_static as Record<string,unknown>)?.ceiling_type} />
-                        <DebugRow k="seating_type" v={(debug?.venue_static as Record<string,unknown>)?.seating_type} />
-                        <DebugRow k="music_policy" v={(debug?.venue_static as Record<string,unknown>)?.music_policy} />
-                        <DebugRow k="espresso_position" v={(debug?.venue_static as Record<string,unknown>)?.espresso_position} />
-                        <DebugRow k="serves_food" v={(debug?.venue_static as Record<string,unknown>)?.serves_food} />
-                        <DebugRow k="serves_alcohol" v={(debug?.venue_static as Record<string,unknown>)?.serves_alcohol} />
-                        <DebugRow k="noise_level_yelp" v={(debug?.venue_static as Record<string,unknown>)?.noise_level_yelp} />
-                        <DebugRow k="google_noise_estimate" v={(debug?.venue_static as Record<string,unknown>)?.google_noise_estimate} />
-                        <DebugRow k="google_review_count" v={(debug?.venue_static as Record<string,unknown>)?.google_review_count} />
-                        <DebugRow k="nearest_subway_m" v={(debug?.venue_static as Record<string,unknown>)?.nearest_subway_m} />
-                        <DebugRow k="pedestrian_volume" v={(debug?.venue_static as Record<string,unknown>)?.pedestrian_volume} />
-
-                        {/* ── computed score ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">computed score</p>
-                        <DebugRow k="evaluated_at" v={debug?.evaluated_at} />
-                        <DebugRow k="day_of_week" v={debug?.day_of_week} />
-                        <DebugRow k="hour" v={debug?.hour} />
-                        <DebugRow k="quiet_score" v={(debug?.computed_score as Record<string,unknown>)?.quiet_score} />
-                        <DebugRow k="noise_score" v={100 - score.quiet_score} />
-                        <DebugRow k="label" v={(debug?.computed_score as Record<string,unknown>)?.label} />
-                        <DebugRow k="confidence" v={(debug?.computed_score as Record<string,unknown>)?.confidence} />
-                        <DebugRow k="noise_raw / 115" v={(debug?.computed_score as Record<string,unknown>)?.noise_raw} />
-                        <DebugRow k="formula" v={(debug?.computed_score as Record<string,unknown>)?.formula} />
-                        <DebugRow k="bd.venue_traits" v={`${score.breakdown.venue_traits} / 40 (${((score.breakdown.venue_traits / 40) * 100).toFixed(1)}%)`} />
-                        <DebugRow k="bd.time_pattern" v={`${score.breakdown.time_pattern} / 50 (${((score.breakdown.time_pattern / 50) * 100).toFixed(1)}%)`} />
-                        <DebugRow k="bd.live_adjustment" v={`${score.breakdown.live_adjustment} / ±15`} />
-                        <DebugRow k="bd.traffic_penalty" v={`${score.breakdown.traffic_penalty} / 10`} />
-                        <DebugRow k="bd.sum_noise" v={score.breakdown.venue_traits + score.breakdown.time_pattern + score.breakdown.live_adjustment + score.breakdown.traffic_penalty} />
-
-                        {/* ── google places ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">google places</p>
-                        <DebugRow k="place_id" v={(debug?.google_places as Record<string,unknown>)?.place_id} />
-                        <DebugRow k="review_count" v={(debug?.google_places as Record<string,unknown>)?.review_count} />
-                        <DebugRow k="noise_estimate_nlp" v={(debug?.google_places as Record<string,unknown>)?.noise_estimate_nlp} />
-                        <DebugRow k="live_busyness" v={(debug?.google_places as Record<string,unknown>)?.live_busyness} />
-                        <DebugRow k="pt_curr.busyness_avg" v={(debug?.google_places as Record<string,unknown> & { popular_times_current_hour: Record<string,unknown> })?.popular_times_current_hour?.busyness_avg} />
-                        <DebugRow k="pt_curr.noise_estimate" v={(debug?.google_places as Record<string,unknown> & { popular_times_current_hour: Record<string,unknown> })?.popular_times_current_hour?.noise_estimate} />
-                        <DebugRow k="pt_coverage.total_slots" v={(debug?.google_places as Record<string,unknown> & { popular_times_coverage: Record<string,unknown> })?.popular_times_coverage?.total_slots} />
-
-                        {/* ── openweather ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">openweather</p>
-                        <DebugRow k="weather_modifier" v={(debug?.openweather as Record<string,unknown>)?.weather_modifier} />
-                        <DebugRow k="recorded_at" v={(debug?.openweather as Record<string,unknown>)?.modifier_recorded_at} />
-
-                        {/* ── nyc open data / 311 ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">nyc open data / 311</p>
-                        <DebugRow k="event_count" v={(debug?.nyc_open_data as Record<string,unknown>)?.event_count} />
-                        <DebugRow k="event_description" v={(debug?.nyc_open_data as Record<string,unknown>)?.event_description} />
-                        <DebugRow k="noise_complaint_count" v={(debug?.nyc_open_data as Record<string,unknown>)?.noise_complaint_count} />
-                        <DebugRow k="construction_nearby" v={(debug?.nyc_open_data as Record<string,unknown>)?.construction_nearby} />
-
-                        {/* ── mta ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">mta</p>
-                        <DebugRow k="disruption_severity" v={(debug?.mta as Record<string,unknown>)?.disruption_severity} />
-                        <DebugRow k="severity_label" v={(debug?.mta as Record<string,unknown>)?.severity_label} />
-                        <DebugRow k="score_impact" v={(debug?.mta as Record<string,unknown>)?.score_impact} />
-
-                        {/* ── dep noise ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">dep ambient noise</p>
-                        <DebugRow k="ambient_level" v={(debug?.dep_noise as Record<string,unknown>)?.ambient_level} />
-                        <DebugRow k="score_impact" v={(debug?.dep_noise as Record<string,unknown>)?.score_impact} />
-
-                        {/* ── tomtom ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">tomtom traffic</p>
-                        <DebugRow k="traffic_congestion" v={(debug?.tomtom as Record<string,unknown>)?.traffic_congestion} />
-                        <DebugRow k="congestion_label" v={(debug?.tomtom as Record<string,unknown>)?.congestion_label} />
-                        <DebugRow k="incidents_nearby" v={(debug?.tomtom as Record<string,unknown>)?.incidents_nearby} />
-                        <DebugRow k="traffic_penalty" v={(debug?.tomtom as Record<string,unknown>)?.traffic_penalty} />
-
-                        {/* ── realtime snapshot ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">realtime snapshot</p>
-                        <DebugRow k="modifier_id" v={(debug?.realtime_snapshot as Record<string,unknown>)?.modifier_id} />
-                        <DebugRow k="timestamp" v={(debug?.realtime_snapshot as Record<string,unknown>)?.timestamp} />
-                        <DebugRow k="age_minutes" v={(debug?.realtime_snapshot as Record<string,unknown>)?.age_minutes} />
-                        <DebugRow k="google_live_busyness" v={(debug?.realtime_snapshot as Record<string,unknown>)?.google_live_busyness} />
-                        <DebugRow k="weather_modifier" v={(debug?.realtime_snapshot as Record<string,unknown>)?.weather_modifier} />
-                        <DebugRow k="event_count" v={(debug?.realtime_snapshot as Record<string,unknown>)?.event_count} />
-                        <DebugRow k="event_description" v={(debug?.realtime_snapshot as Record<string,unknown>)?.event_description} />
-                        <DebugRow k="noise_complaint_count" v={(debug?.realtime_snapshot as Record<string,unknown>)?.noise_complaint_count} />
-                        <DebugRow k="construction_nearby" v={(debug?.realtime_snapshot as Record<string,unknown>)?.construction_nearby} />
-                        <DebugRow k="tomtom_congestion" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_traffic_congestion} />
-                        <DebugRow k="tomtom_incidents" v={(debug?.realtime_snapshot as Record<string,unknown>)?.tomtom_incidents_nearby} />
-                        <DebugRow k="mta_disruption_severity" v={(debug?.realtime_snapshot as Record<string,unknown>)?.mta_disruption_severity} />
-                        <DebugRow k="dep_noise_level" v={(debug?.realtime_snapshot as Record<string,unknown>)?.dep_noise_level} />
-
-                        {/* ── user signals ── */}
-                        <p className="text-yellow-700 uppercase tracking-widest pt-2 pb-0.5">user signals (last 5)</p>
-                        {debug && (debug.user_signals as unknown[])?.length
-                           ? (debug.user_signals as Record<string,unknown>[]).map((s, i) => (
-                              <DebugRow key={i} k={`signal[${i}]`} v={`rating=${s.noise_rating} headcount=${s.headcount_est} @ ${String(s.timestamp).slice(0,19)}`} />
-                           ))
-                           : <DebugRow k="user_signals" v="none" />
-                        }
-                        {!debug && <p className="text-yellow-600 italic">loading...</p>}
+                  {/* Score */}
+                  <DbCard title="Quiet Score" health={scoreHealth} full>
+                     <div className="flex items-center gap-3 mb-3">
+                        <span className={`text-5xl font-black leading-none ${H[scoreHealth].num}`}>{score.quiet_score}</span>
+                        <div className="space-y-1">
+                           <Pill label={score.label} health={scoreHealth} />
+                           <p className="text-[10px] text-zinc-600">{Math.round(score.confidence * 100)}% confidence</p>
+                        </div>
+                        <div className="ml-auto text-right">
+                           <p className={`text-xl font-black ${H[scoreHealth].num}`}>{noiseRaw.toFixed(1)}</p>
+                           <p className="text-[9px] text-zinc-600 uppercase tracking-wide">noise / 115</p>
+                        </div>
                      </div>
+                     <div className="space-y-1.5">
+                        {[
+                           { label: "space",   value: bd.venue_traits,    max: 40, color: "bg-violet-500" },
+                           { label: "time",    value: bd.time_pattern,    max: 50, color: "bg-blue-500" },
+                           { label: "live",    value: bd.live_adjustment, max: 15, color: "bg-cyan-500", mod: true },
+                           { label: "traffic", value: bd.traffic_penalty, max: 10, color: "bg-amber-500" },
+                        ].map(({ label, value, max, color, mod }) => (
+                           <div key={label} className="flex items-center gap-2">
+                              <span className="text-[9px] text-zinc-600 uppercase tracking-wide w-10 shrink-0">{label}</span>
+                              <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                 <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(0, Math.min(100, (Math.abs(value) / max) * 100))}%` }} />
+                              </div>
+                              <span className="text-[10px] text-zinc-400 w-14 text-right shrink-0">
+                                 {mod && value > 0 ? "+" : ""}{value.toFixed(1)}<span className="text-zinc-700">/{mod ? `±${max}` : max}</span>
+                              </span>
+                           </div>
+                        ))}
+                     </div>
+                     <div className="mt-2 pt-2 border-t border-zinc-800 flex justify-between text-[10px]">
+                        <span className="text-zinc-600">temporal src</span>
+                        <span className={cs?.temporal_source === "fallback" ? "text-yellow-400 font-bold" : "text-zinc-400"}>{String(cs?.temporal_source ?? "—")}</span>
+                     </div>
+                     <div className="flex justify-between text-[10px] mt-1">
+                        <span className="text-zinc-600">static completeness</span>
+                        <span className="text-zinc-400">{cs?.static_completeness != null ? `${Math.round((cs.static_completeness as number) * 100)}%` : "—"}</span>
+                     </div>
+                  </DbCard>
+
+                  {/* Confidence breakdown */}
+                  {(() => {
+                     const cb = cs?.confidence_breakdown as Record<string, number> | undefined;
+                     if (!cb) return null;
+                     const rows: [string, number, number][] = [
+                        ["profile coverage",   cb.profile_coverage,      0.30],
+                        ["profile this hour",  cb.profile_current_hour,  0.05],
+                        ["yelp noise",         cb.yelp_noise,            0.08],
+                        ["google nlp",         cb.google_nlp,            0.07],
+                        ["rt freshness",       cb.rt_freshness,          0.18],
+                        ["tomtom",             cb.tomtom,                0.07],
+                        ["live busyness",      cb.live_busyness,         0.04],
+                        ["dep noise",          cb.dep_noise,             0.10],
+                        ["user signals",       cb.user_signals,          0.15],
+                        ["consensus bonus",    cb.consensus_bonus,       0.15],
+                     ];
+                     const total = cb.total as number;
+                     const confHealth: Health = total >= 0.8 ? "good" : total >= 0.5 ? "warn" : "bad";
+                     return (
+                        <DbCard title="Confidence Breakdown" health={confHealth} full>
+                           <div className="flex items-end gap-2 mb-3">
+                              <span className={`text-4xl font-black leading-none ${H[confHealth].num}`}>{Math.round(total * 100)}%</span>
+                              <span className="text-zinc-600 text-xs mb-0.5">/ 100%</span>
+                           </div>
+                           <div className="space-y-1.5">
+                              {rows.map(([label, val, max]) => {
+                                 const pct = Math.min(100, (val / max) * 100);
+                                 const active = val > 0;
+                                 return (
+                                    <div key={label} className="flex items-center gap-2">
+                                       <span className={`text-[9px] uppercase tracking-wide w-28 shrink-0 ${active ? "text-zinc-400" : "text-zinc-700"}`}>{label}</span>
+                                       <div className={`flex-1 h-1 rounded-full overflow-hidden ${active ? "bg-zinc-800" : "bg-zinc-900"}`}>
+                                          <div className={`h-full rounded-full ${active ? "bg-indigo-500" : "bg-zinc-800"}`} style={{ width: `${pct}%` }} />
+                                       </div>
+                                       <span className={`text-[10px] w-10 text-right shrink-0 font-bold ${active ? "text-zinc-300" : "text-zinc-700"}`}>
+                                          {val > 0 ? `+${(val * 100).toFixed(0)}` : "—"}
+                                       </span>
+                                    </div>
+                                 );
+                              })}
+                           </div>
+                        </DbCard>
+                     );
+                  })()}
+
+                  {/* 2-col source cards */}
+                  <div className="grid grid-cols-2 gap-2">
+
+                     {/* Google Places */}
+                     <DbCard title="Google Places" health={gpHealth}>
+                        <BigNum value={gp?.review_count as number ?? null} suffix="reviews" health={gpHealth} />
+                        <div className="mt-2 space-y-1">
+                           <Row k="nlp" v={gp?.noise_estimate_nlp} />
+                           <Row k="live" v={gp?.live_busyness} />
+                           <Row k="pt slots" v={(gp?.popular_times_coverage as Record<string,unknown>)?.total_slots} />
+                        </div>
+                     </DbCard>
+
+                     {/* Realtime freshness */}
+                     <DbCard title="Realtime" health={rtHealth}>
+                        <BigNum value={ageMin != null ? `${ageMin}m` : null} suffix="old" health={rtHealth} />
+                        <div className="mt-2 space-y-1">
+                           <Row k="id" v={rt?.modifier_id} />
+                           <Row k="busyness" v={rt?.google_live_busyness} />
+                           <Row k="weather" v={rt?.weather_modifier} />
+                        </div>
+                     </DbCard>
+
+                     {/* MTA */}
+                     <DbCard title="MTA" health={mtaHealth}>
+                        <Pill label={(mta?.severity_label as string) ?? "—"} health={mtaHealth} />
+                        <div className="mt-2 space-y-1">
+                           <Row k="severity" v={mtaSev} />
+                           <Row k="impact" v={mta?.score_impact} />
+                        </div>
+                     </DbCard>
+
+                     {/* TomTom */}
+                     <DbCard title="TomTom" health={ttHealth}>
+                        <BigNum value={congestion != null ? `${Math.round(congestion * 100)}%` : null} health={ttHealth} />
+                        <div className="mt-2 space-y-1">
+                           <Row k="label" v={tt?.congestion_label} />
+                           <Row k="incidents" v={tt?.incidents_nearby} />
+                           <Row k="penalty" v={tt?.traffic_penalty} />
+                        </div>
+                     </DbCard>
+
+                     {/* DEP */}
+                     <DbCard title="DEP Noise" health={depHealth}>
+                        <BigNum value={depLevel} suffix="/ 100" health={depHealth} />
+                        <div className="mt-2 space-y-1">
+                           <Row k="impact" v={dep?.score_impact} />
+                        </div>
+                     </DbCard>
+
+                     {/* NYC 311 */}
+                     <DbCard title="NYC 311" health={odHealth}>
+                        <div className="flex gap-4">
+                           <div>
+                              <p className={`text-3xl font-black leading-none ${H[odHealth].num}`}>{eventCount}</p>
+                              <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">events</p>
+                           </div>
+                           <div>
+                              <p className={`text-3xl font-black leading-none ${H[odHealth].num}`}>{complaintCount}</p>
+                              <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">complaints</p>
+                           </div>
+                        </div>
+                        <div className="mt-2 space-y-1">
+                           <Row k="construction" v={construction ? "yes" : "no"} />
+                           <Row k="baseline/wk"  v={od?.complaint_baseline_weekly} />
+                           <Row k="event" v={od?.event_description} />
+                        </div>
+                     </DbCard>
+
                   </div>
+
+                  {/* Venue Static */}
+                  <DbCard title="Venue Static" health={vs?.sq_ft ? "neutral" : "bad"} full>
+                     <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <Row k="sq_ft"        v={vs?.sq_ft} />
+                        <Row k="ceiling"      v={vs?.ceiling_type} />
+                        <Row k="music"        v={vs?.music_policy} />
+                        <Row k="espresso"     v={vs?.espresso_position} />
+                        <Row k="seating"      v={vs?.seating_type} />
+                        <Row k="serves_food"  v={vs?.serves_food} />
+                        <Row k="serves_alc"   v={vs?.serves_alcohol} />
+                        <Row k="yelp noise"   v={vs?.noise_level_yelp} />
+                        <Row k="subway m"     v={vs?.nearest_subway_m} />
+                        <Row k="pedestrian"   v={vs?.pedestrian_volume} />
+                        <Row k="reviews"      v={vs?.google_review_count} />
+                        <Row k="google nlp"   v={vs?.google_noise_estimate} />
+                     </div>
+                  </DbCard>
+
+                  {/* User Signals Computed */}
+                  <DbCard title="User Signals Computed" health={usc?.signal_count_72h ? "good" : "neutral"} full>
+                     <div className="flex gap-6 mb-2">
+                        <div>
+                           <p className={`text-3xl font-black leading-none ${usc?.signal_count_72h ? H.good.num : H.neutral.num}`}>{String(usc?.signal_count_72h ?? 0)}</p>
+                           <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">signals 72h</p>
+                        </div>
+                        <div>
+                           <p className={`text-3xl font-black leading-none ${usc?.user_avg_weighted != null ? H.good.num : H.neutral.num}`}>{usc?.user_avg_weighted != null ? (usc.user_avg_weighted as number).toFixed(2) : "—"}</p>
+                           <p className="text-[9px] text-zinc-600 uppercase tracking-wide mt-0.5">avg rating</p>
+                        </div>
+                     </div>
+                     <Row k="sig_score (conf contrib)" v={usc?.sig_score} />
+                  </DbCard>
+
+                  {/* User Signals */}
+                  <DbCard title={`User Signals (${signals?.length ?? 0})`} health={signals?.length ? "good" : "neutral"} full>
+                     {signals?.length ? (
+                        <div className="space-y-1.5">
+                           {signals.map((s, i) => (
+                              <div key={i} className="flex justify-between items-center text-[10px] border-b border-zinc-800/60 pb-1.5">
+                                 <span className="text-zinc-600">{String(s.timestamp).slice(0, 16).replace("T", " ")}</span>
+                                 <span className="text-zinc-200 font-bold">★ {s.noise_rating as number} / 5</span>
+                              </div>
+                           ))}
+                        </div>
+                     ) : (
+                        <p className="text-zinc-600 text-xs">no signals yet</p>
+                     )}
+                  </DbCard>
+
+                  {!debug && (
+                     <div className="text-center py-6 text-zinc-600 text-xs">loading debug data…</div>
+                  )}
+
                </div>
             )}
 

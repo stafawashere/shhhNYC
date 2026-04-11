@@ -14,7 +14,9 @@ from app.models.venue import Venue
 from app.models.hourly_profile import VenueHourlyProfile
 from app.models.realtime_modifier import RealtimeModifier
 from app.models.user_signal import UserSignal
-from app.scoring.composite import quiet_score
+from app.scoring.composite import quiet_score, _get_complaint_baseline
+from app.db.queries import count_recent_signals, signal_confidence, get_user_signal_avg
+from app.scoring.static import static_completeness
 from app.schemas.venue import VenueWithScore, ScoreResponse
 from app.schemas.requests import SubmitSignalRequest
 
@@ -148,6 +150,33 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
     bd = computed["breakdown"]
     noise_raw = bd["venue_traits"] + bd["time_pattern"] + bd["live_adjustment"] + bd["traffic_penalty"]
 
+    slot_count    = len(all_profiles)
+    signal_count  = count_recent_signals(db, venue_id)
+    sig_score_val = signal_confidence(db, venue_id, dt=now)
+    user_avg_val  = get_user_signal_avg(db, venue_id, dt=now)
+    complaint_base = _get_complaint_baseline(venue_id)
+    completeness  = static_completeness(venue)
+
+    from app.scoring.composite import _review_count_factor, _consensus_bonus, _to_category, _user_avg_to_category
+    import math as _math
+
+    _conf_profile_base   = round((0.05 + 0.25 * min(1.0, slot_count / 112)) if slot_count > 0 else 0.0, 4)
+    _conf_profile_hit    = round(0.05 if (profile and profile.busyness_avg is not None) else 0.0, 4)
+    _conf_yelp           = round(0.08 if venue.noise_level_yelp is not None else 0.0, 4)
+    _conf_google_nlp     = round(0.07 * _review_count_factor(venue.google_review_count) if venue.google_noise_estimate is not None else 0.0, 4)
+    _rt_age_min          = round((now - rt.timestamp.astimezone(_NYC_TZ)).total_seconds() / 60) if rt else None
+    _conf_rt_freshness   = round((0.18 if _rt_age_min < 30 else 0.10 if _rt_age_min < 90 else 0.03 if _rt_age_min < 360 else 0.0) if _rt_age_min is not None else 0.0, 4)
+    _conf_tomtom         = round(0.07 if (rt and rt.tomtom_traffic_congestion is not None) else 0.0, 4)
+    _conf_live_busyness  = round(0.04 if (rt and rt.google_live_busyness is not None) else 0.0, 4)
+    _conf_dep            = round(0.10 if (rt and rt.dep_noise_level is not None) else 0.0, 4)
+    _conf_signals        = round(sig_score_val, 4)
+    _conf_consensus      = round(_consensus_bonus(venue, user_avg_val), 4)
+    _conf_total          = round(min(1.0, sum([
+        _conf_profile_base, _conf_profile_hit, _conf_yelp, _conf_google_nlp,
+        _conf_rt_freshness, _conf_tomtom, _conf_live_busyness, _conf_dep,
+        _conf_signals, _conf_consensus,
+    ])), 4)
+
     mta_sev = (rt.mta_disruption_severity or 0.0) if rt else None
     dep_lvl = rt.dep_noise_level if rt else None
 
@@ -207,6 +236,27 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
                 "live_adjustment": round(bd["live_adjustment"], 2),
                 "traffic_penalty": round(bd["traffic_penalty"], 2),
             },
+            "static_completeness": round(completeness, 2),
+            "temporal_source": "profile" if profile else "fallback",
+            "confidence_breakdown": {
+                "total": _conf_total,
+                "profile_coverage": _conf_profile_base,
+                "profile_current_hour": _conf_profile_hit,
+                "yelp_noise": _conf_yelp,
+                "google_nlp": _conf_google_nlp,
+                "rt_freshness": _conf_rt_freshness,
+                "tomtom": _conf_tomtom,
+                "live_busyness": _conf_live_busyness,
+                "dep_noise": _conf_dep,
+                "user_signals": _conf_signals,
+                "consensus_bonus": _conf_consensus,
+            },
+        },
+
+        "user_signals_computed": {
+            "signal_count_72h": signal_count,
+            "user_avg_weighted": round(user_avg_val, 3) if user_avg_val is not None else None,
+            "sig_score": round(sig_score_val, 4),
         },
 
         "google_places": {
@@ -240,6 +290,7 @@ def debug_venue(venue_id: str, db: Session = Depends(get_db)):
             "event_description": rt.event_description if rt else None,
             "noise_complaint_count": rt.noise_complaint_count if rt else None,
             "construction_nearby": rt.construction_nearby if rt else None,
+            "complaint_baseline_weekly": round(complaint_base, 3),
         },
 
         "mta": {
