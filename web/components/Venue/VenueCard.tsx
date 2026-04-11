@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { X } from "lucide-react";
-import { VenueWithScore } from "@/lib/api";
+import { API_BASE, VenueWithScore } from "@/lib/api";
 
 interface Props {
    data: VenueWithScore;
@@ -45,6 +45,24 @@ export default function VenueCard({ data, onClose }: Props) {
          >
             <X size={16} />
          </button>
+
+         {venue.photos && venue.photos.length > 0 && (
+            <div className="relative -mx-5 -mt-5 mb-4 h-[88px] overflow-hidden rounded-t-2xl">
+               <div className="flex h-full gap-px overflow-x-auto scrollbar-none">
+                  {venue.photos.map((_, i) => (
+                     // eslint-disable-next-line @next/next/no-img-element
+                     <img
+                        key={i}
+                        src={`${API_BASE}/venues/${venue.id}/photo/${i}`}
+                        alt={`${venue.name} photo ${i + 1}`}
+                        draggable={false}
+                        className="h-full flex-1 object-cover shrink-0 select-none opacity-60"
+                        style={{ minWidth: 0 }}
+                     />
+                  ))}
+               </div>
+            </div>
+         )}
 
          <div className="flex items-start justify-between gap-4 pr-4">
             <div className="min-w-0">
