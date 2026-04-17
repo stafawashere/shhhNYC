@@ -61,7 +61,7 @@ export default function Home() {
          if (filters.food && !venue.serves_food) return false;
          if (filters.outdoor_seating && !venue.has_outdoor_seating) return false;
          if (filters.max_price > 0 && venue.price_tier && venue.price_tier > filters.max_price) return false;
-         if (filters.min_score > 0 && v.score.quiet_score < filters.min_score) return false;
+         if (filters.min_score > 0 && (v.score.quiet_score == null || v.score.quiet_score < filters.min_score)) return false;
          if (filters.open_now) {
             const status = openNowStatus(venue.opening_hours);
             if (!status || !status.open) return false;

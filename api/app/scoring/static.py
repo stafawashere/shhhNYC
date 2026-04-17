@@ -1,3 +1,4 @@
+import math
 from app.models.venue import Venue
 
 seating_map = {
@@ -32,7 +33,14 @@ def static_completeness(venue: Venue) -> float:
     return filled / _CURATED_FIELD_COUNT
 
 
-def static_score(venue: Venue) -> float:
+def nightlife_cluster_pts(cluster_count: int) -> float:
+    """Diminishing-returns contribution from neighboring loud venues."""
+    if cluster_count <= 0:
+        return 0.0
+    return 6.0 * (1.0 - math.exp(-cluster_count / 4.0))
+
+
+def static_score(venue: Venue, cluster_count: int = 0) -> float:
     score = 0.0
     curated = 0
     if venue.music_policy is not None:
@@ -58,17 +66,11 @@ def static_score(venue: Venue) -> float:
         score += sqft_pts
 
     if venue.nearest_subway_m is not None:
-        if venue.nearest_subway_m < 30:
-            score += 5
-        elif venue.nearest_subway_m < 100:
-            score += 2
+        score += 5.0 * math.exp(-venue.nearest_subway_m / 60.0)
 
     if venue.pedestrian_volume is not None:
-        if venue.pedestrian_volume >= 2000:
-            score += 4.0
-        elif venue.pedestrian_volume >= 1000:
-            score += 2.5
-        elif venue.pedestrian_volume >= 400:
-            score += 1.5
+        score += 4.0 * (1.0 - math.exp(-venue.pedestrian_volume / 1200.0))
 
-    return max(0.0, min(40.0, score))
+    score += nightlife_cluster_pts(cluster_count)
+
+    return max(0.0, 40.0 * math.tanh(score / 40.0))

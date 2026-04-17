@@ -52,27 +52,21 @@ def _apply_multipliers(base: float, venue: Venue, dt: datetime) -> float:
     return base
 
 
+def _profile_base(profile) -> float:
+    if profile.noise_estimate is not None:
+        return profile.busyness_avg * 0.42 + profile.noise_estimate * 0.28
+    return profile.busyness_avg * 0.70
+
+
 def temporal_score(_db, profile, venue: Venue, dt: datetime, _signal_count: int = 0) -> float:
     if profile is None:
-        return _fallback_noise(venue, dt.hour)
+        return _apply_multipliers(_fallback_noise(venue, dt.hour), venue, dt)
 
-    if profile.noise_estimate is not None:
-        base = profile.busyness_avg * 0.3 + profile.noise_estimate * 0.2
-    else:
-        base = profile.busyness_avg * 0.5
-
-    base = _apply_multipliers(base, venue, dt)
-    return max(0.0, min(50.0, base))
+    return max(0.0, min(50.0, _profile_base(profile)))
 
 
 def temporal_score_from_data(profile, venue: Venue, dt: datetime, _recent_signals: list = None, _dow_signals: list = None) -> float:
     if profile is None:
-        return _fallback_noise(venue, dt.hour)
+        return _apply_multipliers(_fallback_noise(venue, dt.hour), venue, dt)
 
-    if profile.noise_estimate is not None:
-        base = profile.busyness_avg * 0.3 + profile.noise_estimate * 0.2
-    else:
-        base = profile.busyness_avg * 0.5
-
-    base = _apply_multipliers(base, venue, dt)
-    return max(0.0, min(50.0, base))
+    return max(0.0, min(50.0, _profile_base(profile)))

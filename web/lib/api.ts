@@ -48,12 +48,21 @@ export interface ScoreBreakdown {
    traffic_penalty: number;
 }
 
+export interface ScoreModelInfo {
+   version: string | null;
+   max_noise: number;
+   calibrated: boolean;
+   n_train: number | null;
+}
+
 export interface Score {
-   quiet_score: number;
+   quiet_score: number | null;
    label: string;
    confidence: number;
    breakdown: ScoreBreakdown;
    traffic_congestion: number | null;
+   closed?: boolean;
+   model?: ScoreModelInfo | null;
 }
 
 export interface VenueWithScore {

@@ -1,0 +1,30 @@
+{
+  "version": "2026-04-17T00:17:45.414452-04:00",
+  "n_train": 21,
+  "production": {
+    "weights": {
+      "s": 1.0,
+      "t": 1.0,
+      "r": 1.0,
+      "tp": 1.0
+    },
+    "max_noise": 60.00209003653153
+  },
+  "research": {
+    "method": "nnls(dep_level ~ w_s*s + w_t*t + w_r*r + w_tp*tp + intercept)",
+    "n_train": 21,
+    "weights": {
+      "s": 0.0,
+      "t": 0.0,
+      "r": 4.685945468140348,
+      "tp": 0.0
+    },
+    "intercept_db": 61.13088297164632,
+    "weighted_noise_raw_p99": 17.10370095871227,
+    "calibration": {
+      "r2": 0.2825571742922397,
+      "spearman": 0.5518364663766161
+    },
+    "caveat": "Per-venue DEP averages collapse within-venue variance; s/t/tp coefs hit 0. Refit once scoring_predictions has cell-level data."
+  }
+}

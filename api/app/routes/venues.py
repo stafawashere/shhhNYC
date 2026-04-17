@@ -81,6 +81,8 @@ def get_nearby_venues(lat: float, lng: float, radius: float = 0.5, limit: int = 
             recent_signals=[],
             dow_signals=[],
             complaint_baseline=bulk.complaint_map.get(vid, 0.0),
+            cluster_count=bulk.cluster_map.get(vid, 0),
+            busy_std=bulk.busy_std_map.get(vid),
         )
         results.append({"venue": venue_to_dict(v), "score": score})
 

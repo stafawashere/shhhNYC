@@ -174,7 +174,7 @@ const OT = {
    quiet: (
       <>
          <p className="font-medium text-zinc-200 mb-1.5">Quiet score</p>
-         <p>Your overall score (0–100) and total noise out of 115. The bars show how space, time, live signal, and traffic each add to that noise.</p>
+         <p>Your overall score (0–100) and total noise relative to the calibrated noise ceiling. The bars show how space, time, live signal, and traffic each add to that noise.</p>
       </>
    ),
    confidence: (
@@ -492,6 +492,19 @@ function detailIconColor(label: string, value: string): string {
    }
 }
 
+const SUBWAY_LINE_COLORS: Record<string, { bg: string; text: string }> = {
+   "1": { bg: "#EE352E", text: "#fff" }, "2": { bg: "#EE352E", text: "#fff" }, "3": { bg: "#EE352E", text: "#fff" },
+   "4": { bg: "#00933C", text: "#fff" }, "5": { bg: "#00933C", text: "#fff" }, "6": { bg: "#00933C", text: "#fff" },
+   "7": { bg: "#B933AD", text: "#fff" },
+   "A": { bg: "#0039A6", text: "#fff" }, "C": { bg: "#0039A6", text: "#fff" }, "E": { bg: "#0039A6", text: "#fff" },
+   "B": { bg: "#FF6319", text: "#fff" }, "D": { bg: "#FF6319", text: "#fff" }, "F": { bg: "#FF6319", text: "#fff" }, "M": { bg: "#FF6319", text: "#fff" },
+   "G": { bg: "#6CBE45", text: "#fff" },
+   "J": { bg: "#996633", text: "#fff" }, "Z": { bg: "#996633", text: "#fff" },
+   "L": { bg: "#A7A9AC", text: "#000" },
+   "N": { bg: "#FCCC0A", text: "#000" }, "Q": { bg: "#FCCC0A", text: "#000" }, "R": { bg: "#FCCC0A", text: "#000" }, "W": { bg: "#FCCC0A", text: "#000" },
+   "S": { bg: "#808183", text: "#fff" },
+};
+
 const DETAIL_ICONS: Record<string, React.ReactNode> = {
    "Music":           <Music2 size={15} />,
    "Seating":         <Armchair size={15} />,
@@ -535,7 +548,8 @@ export default function VenueDetail({ data }: Props) {
    // Live score — starts from server-rendered value, refreshes in background
    const [liveScore, setLiveScore] = useState(data.score);
    const score = liveScore;
-   const colors = noiseColors(score.label);
+   const isClosed = score.closed === true || score.quiet_score == null;
+   const colors = noiseColors(isClosed ? "Closed" : score.label);
 
    const [debug, setDebug] = useState<Record<string, unknown> | null>(null);
    const [hourly, setHourly] = useState<{ day_of_week: number; current_hour: number; slots: { hour: number; busyness: number }[] } | null>(null);
@@ -633,10 +647,10 @@ export default function VenueDetail({ data }: Props) {
    const complaintCount = (sigVal("noise_complaints")?.count as number) ?? 0;
    const construction  = sigVal("construction")?.nearby       as boolean | undefined;
 
-   const quietScoreCard = scoreLabelCardStyles(score.label);
+   const quietScoreCard = scoreLabelCardStyles(isClosed ? "Closed" : score.label);
    const animatedConfidence = useCountUp(Math.round(score.confidence * 100), undefined, ready);
    // Overview card main numbers
-   const animatedQuietScore  = useCountUp(score.quiet_score, undefined, ready);
+   const animatedQuietScore  = useCountUp(score.quiet_score ?? 0, undefined, ready);
    const animatedNoiseRaw    = useCountUp(Math.round(noiseRaw * 10), undefined, ready);
    const animatedTomTom      = useCountUp(congestion != null ? Math.round(congestion * 100) : 0, undefined, ready);
    const animatedTcPct       = useCountUp(score.traffic_congestion != null ? Math.round(score.traffic_congestion * 100) : 0, undefined, ready);
@@ -757,7 +771,7 @@ export default function VenueDetail({ data }: Props) {
                      <p className="text-sm text-zinc-400 mt-1">{venue.address}</p>
                      <p className="text-xs text-zinc-500">{venue.neighborhood} · {venue.borough}</p>
                      <div className="mt-6 flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs font-medium px-3.5 py-1 rounded-full ${colors.badge}`}>{score.label}</span>
+                        <span className={`text-xs font-medium px-3.5 py-1 rounded-full ${colors.badge}`}>{isClosed ? "Closed" : score.label}</span>
                         {(() => {
                            const st = openNowStatus(venue.opening_hours);
                            if (!st) return null;
@@ -782,11 +796,11 @@ export default function VenueDetail({ data }: Props) {
                         )}
                      </div>
                   </div>
-                  <div className="mt-1"><ScoreRing score={score.quiet_score} color={colors.solid} enabled={ready} /></div>
+                  <div className="mt-1"><ScoreRing score={score.quiet_score ?? 0} color={colors.solid} enabled={ready && !isClosed} /></div>
                </div>
 
                <div className="mt-4 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${ready ? "bar-grow" : ""} ${colors.bar}`} style={{ width: ready ? `${score.quiet_score}%` : "0%", ["--bar-dur" as string]: `${scaleDuration(score.quiet_score)}ms` }} />
+                  <div className={`h-full rounded-full transition-all ${ready && !isClosed ? "bar-grow" : ""} ${colors.bar}`} style={{ width: ready && !isClosed ? `${score.quiet_score ?? 0}%` : "0%", ["--bar-dur" as string]: `${scaleDuration(score.quiet_score ?? 0)}ms` }} />
                </div>
                <div className="flex justify-between mt-1.5 text-[11px] text-zinc-600">
                   <span>Noisiest</span>
@@ -857,13 +871,13 @@ export default function VenueDetail({ data }: Props) {
                      <div className="bg-zinc-900 rounded-xl px-4 py-1 border border-zinc-800/60">
                         <dl className="flex flex-col text-sm">
                            {([
+                              [["Phone",           venue.phone_number ?? null], ["Website", venue.website_url ? "Visit site" : null]],
                               [["Price",           venue.price_tier ? "$".repeat(venue.price_tier) : null], ["Music", humanize(venue.music_policy)]],
                               [["Food",            venue.serves_food    == null ? null : venue.serves_food    ? "Yes" : "No"], ["Alcohol", venue.serves_alcohol == null ? null : venue.serves_alcohol ? "Yes" : "No"]],
                               [["Outdoor seating", venue.has_outdoor_seating == null ? null : venue.has_outdoor_seating ? "Yes" : "No"], ["Health grade", venue.health_grade ?? null]],
                               [["Liquor license",  venue.liquor_license_type ?? null], ["Cabaret", venue.is_cabaret == null ? null : venue.is_cabaret ? "Yes" : "No"]],
                               [["Size",            venue.sq_ft != null ? `${venue.sq_ft.toLocaleString()} sq ft` : null], ["Seating", venue.seating_type?.map(humanize).join(", ") ?? null]],
                               [["Subway",          venue.nearest_subway_m != null ? (venue.nearest_subway_m < 1000 ? `${venue.nearest_subway_m}m` : `${(venue.nearest_subway_m / 1000).toFixed(1)}km`) : null], ["Hours", todayWeekdayText(venue.opening_hours)]],
-                              [["Phone",           venue.phone_number ?? null], ["Website", venue.website_url ? "Visit site" : null]],
                            ] as [[string, string | null | undefined], [string, string | null | undefined] | null][])
                               .filter(pair => {
                                  // Hide Phone/Website row if both are null
@@ -911,9 +925,16 @@ export default function VenueDetail({ data }: Props) {
                                        Lines
                                     </span>
                                     <div className="flex gap-1.5 flex-wrap">
-                                       {venue.subway_lines_served.map(line => (
-                                          <span key={line} className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 text-zinc-100 text-[11px] font-bold leading-none">{line}</span>
-                                       ))}
+                                       {venue.subway_lines_served.map(line => {
+                                          const lc = SUBWAY_LINE_COLORS[line.toUpperCase()];
+                                          return (
+                                             <span
+                                                key={line}
+                                                className="inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold leading-none"
+                                                style={lc ? { backgroundColor: lc.bg, color: lc.text } : { backgroundColor: "#3f3f46", color: "#f4f4f5" }}
+                                             >{line}</span>
+                                          );
+                                       })}
                                     </div>
                                  </div>
                               </div>
@@ -1186,7 +1207,7 @@ export default function VenueDetail({ data }: Props) {
                         </div>
                         <div className="ml-auto text-right">
                            <p className={`text-xl font-black ${quietScoreCard.num}`}><OdometerNumber value={(animatedNoiseRaw / 10).toFixed(1)} /></p>
-                           <p className="text-[11px] text-zinc-500 uppercase tracking-wide">noise / 115</p>
+                           <p className="text-[11px] text-zinc-500 uppercase tracking-wide">noise / {score.model ? Math.round(score.model.max_noise) : 60}</p>
                         </div>
                      </div>
                      <div className="space-y-1.5">
@@ -1207,6 +1228,13 @@ export default function VenueDetail({ data }: Props) {
                            </div>
                         ))}
                      </div>
+                     {score.model && (
+                        <p className="mt-3 pt-2 border-t border-zinc-800/60 text-[10px] text-zinc-600 uppercase tracking-wider">
+                           {score.model.calibrated ? "Calibrated" : "Defaults"}
+                           {score.model.version && ` · ${score.model.version.slice(0, 10)}`}
+                           {score.model.n_train != null && ` · n=${score.model.n_train}`}
+                        </p>
+                     )}
                   </DbCard>
 
                   {/* Confidence breakdown */}

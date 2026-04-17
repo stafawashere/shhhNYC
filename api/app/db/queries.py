@@ -23,6 +23,58 @@ def count_profile_slots(db: Session, venue_id) -> int:
     ).count()
 
 
+def count_profile_slots_near(db: Session, venue_id, hour: int, day_of_week: int, window: int = 1) -> int:
+    hours = [(hour + d) % 24 for d in range(-window, window + 1)]
+    return db.query(VenueHourlyProfile).filter(
+        VenueHourlyProfile.venue_id == venue_id,
+        VenueHourlyProfile.day_of_week == day_of_week,
+        VenueHourlyProfile.hour.in_(hours),
+    ).count()
+
+
+def get_profile_neighbors(db: Session, venue_id, hour: int, day_of_week: int):
+    hours = [(hour - 1) % 24, (hour + 1) % 24]
+    return db.query(VenueHourlyProfile).filter(
+        VenueHourlyProfile.venue_id == venue_id,
+        VenueHourlyProfile.day_of_week == day_of_week,
+        VenueHourlyProfile.hour.in_(hours),
+    ).all()
+
+
+def venue_busyness_std(db: Session, venue_id) -> float | None:
+    """Std dev of busyness across all known (hour, dow) cells for a venue.
+
+    Higher std => more volatile day-to-day pattern => predictions at any
+    given cell are less trustworthy. Used to dampen confidence.
+    """
+    val = db.query(func.stddev_samp(VenueHourlyProfile.busyness_avg)).filter(
+        VenueHourlyProfile.venue_id == venue_id,
+        VenueHourlyProfile.busyness_avg.isnot(None),
+    ).scalar()
+    return float(val) if val is not None else None
+
+
+def nightlife_cluster_count(db: Session, venue_id, radius_m: int = 150) -> int:
+    """Count of nearby venues that contribute to nighttime acoustic load.
+
+    A venue counts if it has loud-leaning music_policy or any liquor license.
+    Self-excluded. Uses PostGIS ST_DWithin on the geography column.
+    """
+    from sqlalchemy import text
+    sql = text("""
+        SELECT count(*)
+        FROM venues other
+        JOIN venues self ON self.id = :venue_id
+        WHERE other.id <> self.id
+          AND ST_DWithin(other.location, self.location, :radius)
+          AND (
+            other.music_policy IN ('moderate', 'loud')
+            OR other.liquor_license_type IS NOT NULL
+          )
+    """)
+    return int(db.execute(sql, {"venue_id": str(venue_id), "radius": radius_m}).scalar() or 0)
+
+
 def _rows_to_signals(rows: list[SignalEvent]) -> Signals:
     return {row.signal_type: (row.value, row.captured_at) for row in rows}
 
@@ -53,11 +105,13 @@ def get_latest_signals(db: Session, venue_id) -> Signals:
 
 
 class BulkScoringData:
-    def __init__(self, profile_map: dict, slot_count_map: dict, signals_map: dict[str, Signals], complaint_map: dict):
+    def __init__(self, profile_map: dict, slot_count_map: dict, signals_map: dict[str, Signals], complaint_map: dict, cluster_map: dict | None = None, busy_std_map: dict | None = None):
         self.profile_map = profile_map
         self.slot_count_map = slot_count_map
         self.signals_map = signals_map
         self.complaint_map = complaint_map
+        self.cluster_map = cluster_map or {}
+        self.busy_std_map = busy_std_map or {}
 
 
 def bulk_load_scoring_data(db: Session, venue_ids: list, dt: datetime) -> BulkScoringData:
@@ -126,9 +180,35 @@ def bulk_load_scoring_data(db: Session, venue_ids: list, dt: datetime) -> BulkSc
     except Exception:
         pass
 
+    busy_std_rows = (
+        db.query(VenueHourlyProfile.venue_id, func.stddev_samp(VenueHourlyProfile.busyness_avg))
+        .filter(
+            VenueHourlyProfile.venue_id.in_(venue_ids),
+            VenueHourlyProfile.busyness_avg.isnot(None),
+        )
+        .group_by(VenueHourlyProfile.venue_id)
+        .all()
+    )
+    busy_std_map = {str(vid): float(s) for vid, s in busy_std_rows if s is not None}
+
+    from sqlalchemy import text as _text
+    cluster_rows = db.execute(_text("""
+        SELECT self.id::text AS vid, count(other.id) AS c
+        FROM venues self
+        LEFT JOIN venues other
+          ON other.id <> self.id
+         AND ST_DWithin(other.location, self.location, 150)
+         AND (other.music_policy IN ('moderate','loud') OR other.liquor_license_type IS NOT NULL)
+        WHERE self.id = ANY(CAST(:ids AS uuid[]))
+        GROUP BY self.id
+    """), {"ids": [str(v) for v in venue_ids]}).all()
+    cluster_map = {row.vid: int(row.c) for row in cluster_rows}
+
     return BulkScoringData(
         profile_map=profile_map,
         slot_count_map=slot_count_map,
         signals_map=signals_map,
         complaint_map=complaint_map,
+        cluster_map=cluster_map,
+        busy_std_map=busy_std_map,
     )

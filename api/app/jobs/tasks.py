@@ -335,20 +335,46 @@ def refresh_google_review_noise():
 def refresh_noise_complaint_baseline():
     if not _throttle("complaint_baseline", cooldown_seconds=86400 * 7): return
 
+    from app.models.complaint_baseline import ComplaintBaseline
+    from app.scoring.composite import _bayesian_shrink, _BOROUGH_COMPLAINT_PRIOR
+
     db = SessionLocal()
     try:
+        # Compute borough priors in one pass: median weekly_avg per borough.
+        per_borough: dict[str, list[float]] = {}
+        observations: list[tuple[Venue, float]] = []
         for venue in _all_venues(db):
             lat, lng = _coords(venue)
-            complaints_60d = nyc_opendata.get_nearby_noise_complaints(
-                lat, lng, radius_m=300, days=60
-            )
-            weekly_avg = len(complaints_60d) / (60 / 7)
+            complaints_60d = nyc_opendata.get_nearby_noise_complaints(lat, lng, radius_m=300, days=60)
+            weekly = len(complaints_60d) / (60 / 7)
+            observations.append((venue, weekly))
+            per_borough.setdefault(venue.borough or "_", []).append(weekly)
+
+        borough_prior = {b: (sorted(v)[len(v)//2] if v else _BOROUGH_COMPLAINT_PRIOR) for b, v in per_borough.items()}
+        n_weeks = 60 / 7  # window length in weeks
+
+        for venue, weekly in observations:
+            prior = borough_prior.get(venue.borough or "_", _BOROUGH_COMPLAINT_PRIOR)
+            posterior = _bayesian_shrink(weekly, n_weeks, prior)
+
+            row = db.get(ComplaintBaseline, venue.id)
+            if row is None:
+                row = ComplaintBaseline(venue_id=venue.id, weekly_observed=weekly, n_weeks=n_weeks, borough_prior=prior, posterior=posterior)
+                db.add(row)
+            else:
+                row.weekly_observed = weekly
+                row.n_weeks = n_weeks
+                row.borough_prior = prior
+                row.posterior = posterior
+                row.updated_at = datetime.now()
+
             key = f"complaint_baseline:{venue.id}"
-            val = str(round(weekly_avg, 3))
+            val = str(round(posterior, 3))
             if hasattr(celery.backend, 'client'):
                 celery.backend.client.set(key, val, ex=86400 * 7)
             else:
                 celery.backend.set(key, val)
+        db.commit()
     finally:
         db.close()
 

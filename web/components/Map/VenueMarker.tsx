@@ -14,18 +14,29 @@ interface Props {
 }
 
 function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
-   const { quiet_score, label } = data.score;
-   const { solid, bright, alpha, borderAlpha } = noiseColorsByScore(quiet_score);
-   const hasLive = data.score.breakdown.live_adjustment !== 0;
+   const { quiet_score, label, closed } = data.score;
+   const isClosed = closed === true || quiet_score == null;
+   const displayLabel = isClosed ? "Closed" : label;
+   const { solid, bright, alpha, borderAlpha } = noiseColorsByScore(quiet_score ?? 0);
+   const hasLive = !isClosed && data.score.breakdown.live_adjustment !== 0;
 
-   const glassStyle: React.CSSProperties = {
-      backgroundColor: alpha,
-      color: "#ffffff",
-      border: `1px solid ${borderAlpha}`,
-      backdropFilter: "blur(8px)",
-      WebkitBackdropFilter: "blur(8px)",
-      boxShadow: `0 2px 10px ${alpha}, ${GLASS_MARKER_SHADOW}`,
-   };
+   const glassStyle: React.CSSProperties = isClosed
+      ? {
+           backgroundColor: "rgba(39,39,42,0.55)",
+           color: "#a1a1aa",
+           border: "1px dashed rgba(113,113,122,0.45)",
+           backdropFilter: "blur(8px)",
+           WebkitBackdropFilter: "blur(8px)",
+           boxShadow: GLASS_MARKER_SHADOW,
+        }
+      : {
+           backgroundColor: alpha,
+           color: "#ffffff",
+           border: `1px solid ${borderAlpha}`,
+           backdropFilter: "blur(8px)",
+           WebkitBackdropFilter: "blur(8px)",
+           boxShadow: `0 2px 10px ${alpha}, ${GLASS_MARKER_SHADOW}`,
+        };
 
    return (
       <Marker latitude={lat} longitude={lng} onClick={onClick} anchor="bottom">
@@ -48,29 +59,31 @@ function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
                   className="px-3 py-[5px] rounded-full text-[11px] font-medium leading-none tracking-wide whitespace-nowrap text-center"
                   style={glassStyle}
                >
-                  {label}
+                  {displayLabel}
                </div>
 
                {/* Score badge — 18px circle anchored to the pill's top-right corner */}
-               <div
-                  className="absolute top-0 -right-1 w-[18px] h-[18px] flex justify-center items-center rounded-full text-[9px] font-black leading-none"
-                  style={glassStyle}
-               >
-                  {/* Ping ring — inset-0 mirrors the circle geometry exactly */}
-                  {hasLive && (
-                     <span
-                        className="absolute inset-0 rounded-full animate-ping opacity-30 pointer-events-none"
-                        style={{ backgroundColor: bright, animationDuration: "2s" }}
-                     />
-                  )}
+               {!isClosed && (
+                  <div
+                     className="absolute top-0 -right-1 w-[18px] h-[18px] flex justify-center items-center rounded-full text-[9px] font-black leading-none"
+                     style={glassStyle}
+                  >
+                     {/* Ping ring — inset-0 mirrors the circle geometry exactly */}
+                     {hasLive && (
+                        <span
+                           className="absolute inset-0 rounded-full animate-ping opacity-30 pointer-events-none"
+                           style={{ backgroundColor: bright, animationDuration: "2s" }}
+                        />
+                     )}
 
-                  <span style={hasLive ? {
-                     animation: "scorePulse 2s cubic-bezier(0,0,0.2,1) infinite",
-                     ["--pulse-color" as string]: bright,
-                  } : undefined}>
-                     {quiet_score}
-                  </span>
-               </div>
+                     <span style={hasLive ? {
+                        animation: "scorePulse 2s cubic-bezier(0,0,0.2,1) infinite",
+                        ["--pulse-color" as string]: bright,
+                     } : undefined}>
+                        {quiet_score}
+                     </span>
+                  </div>
+               )}
 
             </div>
 
@@ -79,7 +92,7 @@ function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
                width: 0, height: 0,
                borderLeft: "5px solid transparent",
                borderRight: "5px solid transparent",
-               borderTop: `6px solid ${solid}`,
+               borderTop: `6px solid ${isClosed ? "rgba(113,113,122,0.55)" : solid}`,
                opacity: 0.8,
             }} />
          </div>

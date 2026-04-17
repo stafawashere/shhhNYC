@@ -43,12 +43,21 @@ class ScoreBreakdown(BaseModel):
     traffic_penalty: float = 0.0
 
 
+class ScoreModelInfo(BaseModel):
+    version: Optional[str] = None
+    max_noise: float
+    calibrated: bool
+    n_train: Optional[int] = None
+
+
 class ScoreResponse(BaseModel):
-    quiet_score: int
+    quiet_score: Optional[int] = None
     label: str
     confidence: float
     breakdown: ScoreBreakdown
     traffic_congestion: Optional[float] = None
+    closed: bool = False
+    model: Optional[ScoreModelInfo] = None
 
 
 class VenueWithScore(BaseModel):

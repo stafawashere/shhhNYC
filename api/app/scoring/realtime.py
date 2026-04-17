@@ -1,8 +1,30 @@
+import math
 from datetime import datetime, timezone
 from app.models.venue import Venue
 from app.models.signal_event import SIGNAL_TTLS
 
 Signals = dict[str, tuple[dict, datetime]]
+
+
+def _outdoor_fraction(venue: Venue) -> float:
+    """Continuous outdoor exposure in [0, 1].
+
+    Prefers explicit seating_type composition. Falls back to the
+    has_outdoor_seating flag with a curated-uncertainty default of 0.3
+    when we know there's outdoor seating but not how much.
+    """
+    seating = venue.seating_type or []
+    if seating:
+        if all(s == "outdoor" for s in seating):
+            return 1.0
+        if "outdoor" in seating:
+            # Even split across listed seating areas; still a coarse proxy
+            # but at least matches the count of indoor zones.
+            return 1.0 / len(seating)
+        return 0.0
+    if getattr(venue, "has_outdoor_seating", None) is True:
+        return 0.3
+    return 0.0
 
 
 def _active(signals: Signals, name: str) -> tuple[dict | None, float | None]:
@@ -21,48 +43,62 @@ def realtime_score(venue: Venue, signals: Signals, complaint_baseline: float = 0
     modifier = 0.0
     traffic_penalty = 0.0
 
+    outdoor_frac = _outdoor_fraction(venue)
+
     weather_val, _ = _active(signals, "weather")
     if weather_val is not None:
         wm = weather_val.get("modifier", 0.0)
-        seating = venue.seating_type or []
-        outdoor_only = bool(seating) and all(s == "outdoor" for s in seating)
-        modifier += -wm if outdoor_only else wm
+        modifier += wm * (1.0 - 2.0 * outdoor_frac)
+
+    disruption_sources = 0.0
+    disruption_total = 0.0
 
     events_val, _ = _active(signals, "events")
     ec = events_val["count"] if events_val is not None else 0
+    event_mod = 0.0
     if ec >= 6:
-        modifier += 2.0
+        event_mod = 2.0
     elif ec >= 3:
-        modifier += 1.5
+        event_mod = 1.5
     elif ec >= 1:
-        modifier += 1.0
+        event_mod = 1.0
+    if event_mod:
+        disruption_total += event_mod
+        disruption_sources += 1
 
     complaints_val, _ = _active(signals, "noise_complaints")
     count = complaints_val["count"] if complaints_val is not None else 0
-    if complaint_baseline > 0.5:
-        excess_ratio = max(0.0, (count - complaint_baseline) / complaint_baseline)
-        modifier += min(4.0, excess_ratio * 4.0)
-    else:
-        if count >= 6:
-            modifier += 4.0
-        elif count >= 3:
-            modifier += 2.5
-        elif count >= 1:
-            modifier += 1.5
+    baseline = max(complaint_baseline, 1.0)
+    excess = max(0.0, (count + 0.5 - baseline) / (baseline + 1.0))
+    complaint_mod = min(4.0, excess * 4.0)
+    if complaint_mod:
+        disruption_total += complaint_mod
+        disruption_sources += 1
 
     construction_val, _ = _active(signals, "construction")
     if construction_val is not None and construction_val.get("nearby"):
-        modifier += 4.0
+        disruption_total += 4.0
+        disruption_sources += 1
 
     tomtom_val, tomtom_age = _active(signals, "tomtom")
+    tomtom_disruption = 0.0
     if tomtom_val is not None:
-        modifier += tomtom_val.get("incidents", 0.0)
+        incidents_raw = tomtom_val.get("incidents", 0.0) or 0.0
+        tomtom_disruption = min(3.0, incidents_raw * 0.5)
         congestion = tomtom_val.get("congestion")
         if congestion is not None:
             raw_penalty = max(0.0, (1.0 - congestion)) * 10.0
-            if tomtom_age is not None and tomtom_age > 90:
-                raw_penalty *= max(0.2, 1.0 - (tomtom_age - 90) / 120)
+            if tomtom_age is not None:
+                tau = 90.0
+                raw_penalty *= math.exp(-max(0.0, tomtom_age - 30.0) / tau)
             traffic_penalty = raw_penalty
+    if tomtom_disruption:
+        disruption_total += tomtom_disruption
+        disruption_sources += 1
+
+    if disruption_sources > 0:
+        damping = 1.0 / (1.0 + 0.35 * (disruption_sources - 1))
+        modifier += disruption_total * damping
 
     mta_val, _ = _active(signals, "mta")
     if mta_val is not None:
@@ -71,10 +107,7 @@ def realtime_score(venue: Venue, signals: Signals, complaint_baseline: float = 0
             impact = min(3.2, mta_sev * 0.8)
             nearest_m = venue.nearest_subway_m
             if nearest_m is not None:
-                if nearest_m > 500:
-                    impact *= 0.3
-                elif nearest_m > 200:
-                    impact *= 0.6
+                impact *= math.exp(-nearest_m / 180.0)
             modifier += impact
 
     dep_val, _ = _active(signals, "dep_noise")

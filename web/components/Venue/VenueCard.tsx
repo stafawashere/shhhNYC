@@ -64,8 +64,9 @@ function buildRows(venue: VenueWithScore["venue"]): DetailRow[] {
 
 export default function VenueCard({ data, onClose }: Props) {
    const { venue, score } = data;
-   const colors = noiseColors(score.label);
-   const animatedScore = useCountUp(score.quiet_score, 700);
+   const isClosed = score.closed === true || score.quiet_score == null;
+   const colors = noiseColors(isClosed ? "Closed" : score.label);
+   const animatedScore = useCountUp(score.quiet_score ?? 0, 700);
    const rows = buildRows(venue);
 
    // pair rows into [left, right] columns
@@ -128,19 +129,26 @@ export default function VenueCard({ data, onClose }: Props) {
             </div>
             <div className="flex items-center gap-3 shrink-0 -mr-4 mt-2">
                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors.badge}`}>
-                  {score.label}
+                  {isClosed ? "Closed" : score.label}
                </span>
-               <div className="flex items-baseline gap-0.5">
-                  <div className={`text-3xl font-extrabold leading-none ${colors.num}`}>{animatedScore}</div>
-                  <span className="text-zinc-600 text-[11px] font-medium">/115</span>
-               </div>
+               {!isClosed && (
+                  <div className="flex items-baseline gap-0.5">
+                     <div className={`text-3xl font-extrabold leading-none ${colors.num}`}>{animatedScore}</div>
+                     <span className="text-zinc-600 text-[11px] font-medium">/100</span>
+                  </div>
+               )}
+               {isClosed && (
+                  <div className="text-zinc-500 text-xs font-medium">—</div>
+               )}
             </div>
          </div>
 
          {/* score bar */}
-         <div className="mt-3 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-            <div className={`h-full rounded-full transition-all bar-grow ${colors.bar}`} style={{ width: `${Math.min((score.quiet_score / 115) * 100, 100)}%` }} />
-         </div>
+         {!isClosed && (
+            <div className="mt-3 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+               <div className={`h-full rounded-full transition-all bar-grow ${colors.bar}`} style={{ width: `${Math.min(((score.quiet_score ?? 0) / 100) * 100, 100)}%` }} />
+            </div>
+         )}
 
          {/* venue details mini grid */}
          {pairs.length > 0 && (
