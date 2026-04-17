@@ -1,7 +1,9 @@
 "use client";
 
+import { memo } from "react";
 import { Marker } from "react-map-gl/mapbox";
 import { VenueWithScore } from "@/lib/api";
+import { noiseColorsByScore, GLASS_MARKER_SHADOW } from "@/lib/theme";
 
 interface Props {
    data: VenueWithScore;
@@ -11,46 +13,68 @@ interface Props {
    onClick: () => void;
 }
 
-function scoreStyle(score: number) {
-   if (score >= 80) return { solid: "#10b981", alpha: "rgba(16,185,129,0.75)", border: "rgba(110,231,183,0.4)", ring: "#6ee7b7" };
-   if (score >= 60) return { solid: "#22c55e", alpha: "rgba(34,197,94,0.75)",  border: "rgba(134,239,172,0.4)", ring: "#86efac" };
-   if (score >= 40) return { solid: "#eab308", alpha: "rgba(234,179,8,0.75)",  border: "rgba(253,224,71,0.4)",  ring: "#fde047" };
-   if (score >= 20) return { solid: "#f97316", alpha: "rgba(249,115,22,0.75)", border: "rgba(253,186,116,0.4)", ring: "#fdba74" };
-   return            { solid: "#ef4444", alpha: "rgba(239,68,68,0.75)",   border: "rgba(252,165,165,0.4)", ring: "#fca5a5" };
-}
-
-function scoreLabel(score: number): string {
-   if (score >= 80) return "Very Quiet";
-   if (score >= 60) return "Quiet";
-   if (score >= 40) return "Moderate";
-   if (score >= 20) return "Loud";
-   return "Very Loud";
-}
-
-export default function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
-   const { quiet_score } = data.score;
-   const { solid, alpha, border, ring } = scoreStyle(quiet_score);
+function VenueMarker({ data, lat, lng, scale = 1, onClick }: Props) {
+   const { quiet_score, label } = data.score;
+   const { solid, bright, alpha, borderAlpha } = noiseColorsByScore(quiet_score);
    const hasLive = data.score.breakdown.live_adjustment !== 0;
+
+   const glassStyle: React.CSSProperties = {
+      backgroundColor: alpha,
+      color: "#ffffff",
+      border: `1px solid ${borderAlpha}`,
+      backdropFilter: "blur(8px)",
+      WebkitBackdropFilter: "blur(8px)",
+      boxShadow: `0 2px 10px ${alpha}, ${GLASS_MARKER_SHADOW}`,
+   };
 
    return (
       <Marker latitude={lat} longitude={lng} onClick={onClick} anchor="bottom">
-         <div className="group cursor-pointer flex flex-col items-center relative" style={{ transform: `scale(${scale})`, transformOrigin: "bottom center", zIndex: 10 }}>
-            {/* glass pill */}
-            <div
-               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-transform group-hover:scale-110"
-               style={{
-                  backgroundColor: alpha,
-                  color: "#ffffff",
-                  border: `1px solid ${border}`,
-                  backdropFilter: "blur(8px)",
-                  WebkitBackdropFilter: "blur(8px)",
-                  boxShadow: `0 2px 10px ${alpha}, inset 0 1px 0 rgba(255,255,255,0.15)`,
-               }}
-            >
-               <span className="text-sm font-extrabold leading-none">{quiet_score}</span>
-               <span className="opacity-90 font-medium leading-none hidden sm:inline">{scoreLabel(quiet_score)}</span>
+
+         <div className="group cursor-pointer flex flex-col items-center" style={{ transform: `scale(${scale})`, transformOrigin: "bottom center", zIndex: 10 }}>
+            {/*
+               Badge layout: pill is the layout anchor, score circle is
+               absolutely positioned at its top-right corner like a notification
+               badge. pt-2 pr-2 make room for the badge without shifting the pill.
+            */}
+            {/*
+               Wrapper gives the badge room to overflow the pill's top-right corner.
+               pt = half badge height, pr = half badge width, so badge sits centered
+               on the corner without clipping or shifting the pill's layout.
+            */}
+            <div className="relative pt-[9px] transition-transform group-hover:scale-110 right-0.5">
+
+               {/* Label pill — pl is normal, pr reserves space so text never slides under the badge */}
+               <div
+                  className="px-3 py-[5px] rounded-full text-[11px] font-medium leading-none tracking-wide whitespace-nowrap text-center"
+                  style={glassStyle}
+               >
+                  {label}
+               </div>
+
+               {/* Score badge — 18px circle anchored to the pill's top-right corner */}
+               <div
+                  className="absolute top-0 -right-1 w-[18px] h-[18px] flex justify-center items-center rounded-full text-[9px] font-black leading-none"
+                  style={glassStyle}
+               >
+                  {/* Ping ring — inset-0 mirrors the circle geometry exactly */}
+                  {hasLive && (
+                     <span
+                        className="absolute inset-0 rounded-full animate-ping opacity-30 pointer-events-none"
+                        style={{ backgroundColor: bright, animationDuration: "2s" }}
+                     />
+                  )}
+
+                  <span style={hasLive ? {
+                     animation: "scorePulse 2s cubic-bezier(0,0,0.2,1) infinite",
+                     ["--pulse-color" as string]: bright,
+                  } : undefined}>
+                     {quiet_score}
+                  </span>
+               </div>
+
             </div>
-            {/* pointer tip */}
+
+            {/* Pointer tip — offset by half the pr padding to stay centered under the pill */}
             <div style={{
                width: 0, height: 0,
                borderLeft: "5px solid transparent",
@@ -58,14 +82,9 @@ export default function VenueMarker({ data, lat, lng, scale = 1, onClick }: Prop
                borderTop: `6px solid ${solid}`,
                opacity: 0.8,
             }} />
-            {/* live pulse ring */}
-            {hasLive && (
-               <span
-                  className="absolute rounded-full animate-ping opacity-25 pointer-events-none"
-                  style={{ width: 36, height: 36, backgroundColor: ring, top: -4, left: -4 }}
-               />
-            )}
          </div>
       </Marker>
    );
 }
+
+export default memo(VenueMarker);

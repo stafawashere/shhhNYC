@@ -10,13 +10,14 @@ class Settings(BaseSettings):
 
     google_places_api_key: str = ""
     openweather_api_key: str = ""
-    yelp_api_key: str = ""
     besttime_api_key_private: str = ""
     besttime_api_key_public: str = ""
     tomtom_api_key: str = ""
+    anthropic_api_key: str = ""
 
     class Config:
         env_file = _ENV_FILE
+        extra = "ignore"
 
 
 settings = Settings()

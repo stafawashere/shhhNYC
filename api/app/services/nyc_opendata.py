@@ -1,4 +1,5 @@
 import httpx
+import re
 from datetime import date, timedelta, datetime, timezone
 
 _CONSTRUCTION_URL  = "https://data.cityofnewyork.us/resource/w9ak-ipjd.json"  # DOB NOW: Build – Job Filings
@@ -63,7 +64,7 @@ def get_street_events(event_date: date | None = None) -> list[dict]:
         ),
         "$order": "start_date_time DESC",
         "$limit": 200,
-        "$select": "event_id,event_name,event_type,start_date_time,end_date_time,event_borough,event_location,street_closure_type",
+        "$select": "event_id,event_name,event_type,start_date_time,end_date_time,event_borough,event_location,street_closure_type,latitude,longitude",
     }
     try:
         resp = httpx.get(_EVENTS_URL, params=params, timeout=_TIMEOUT)
@@ -178,9 +179,8 @@ def get_pedestrian_count_near(lat: float, lng: float, radius_m: float = 400) -> 
     if not rows:
         return None
 
-    import re
     _BAND_RE = re.compile(
-        r"^(?:may|sept?|oct|jun|nov)_?\d{2}(?:_|\s)?(am|pm|md)$", re.I
+        r"^(?:may|sept?|oct|june?|nov)_?\d{2}[_\s]?(?:am|md|p_?m)$", re.I
     )
 
     best_count: int | None = None

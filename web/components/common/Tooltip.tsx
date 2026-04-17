@@ -11,6 +11,8 @@ interface TooltipProps {
   position?: Position;
   offset?: number;
   className?: string;
+  /** For left/right: vertical alignment with trigger (start = top edges align). For top/bottom: horizontal alignment. Default center. */
+  crossAlign?: "start" | "center" | "end";
 }
 
 interface TooltipCoords {
@@ -26,14 +28,17 @@ export default function Tooltip({
   position = "top",
   offset = 8,
   className = "",
+  crossAlign = "center",
 }: TooltipProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState<TooltipCoords | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const triggerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fadeOutRef = useRef<NodeJS.Timeout | null>(null);
 
   const updatePosition = useCallback(() => {
     function measure() {
@@ -53,19 +58,27 @@ export default function Tooltip({
       switch (position) {
         case "top":
           top = trigger.top - contentEl.height - offset;
-          left = trigger.left + (trigger.width - contentEl.width) / 2;
+          if (crossAlign === "start") left = trigger.left;
+          else if (crossAlign === "end") left = trigger.right - contentEl.width;
+          else left = trigger.left + (trigger.width - contentEl.width) / 2;
           break;
         case "bottom":
           top = trigger.bottom + offset;
-          left = trigger.left + (trigger.width - contentEl.width) / 2;
+          if (crossAlign === "start") left = trigger.left;
+          else if (crossAlign === "end") left = trigger.right - contentEl.width;
+          else left = trigger.left + (trigger.width - contentEl.width) / 2;
           break;
         case "left":
-          top = trigger.top + (trigger.height - contentEl.height) / 2;
           left = trigger.left - contentEl.width - offset;
+          if (crossAlign === "start") top = trigger.top;
+          else if (crossAlign === "end") top = trigger.bottom - contentEl.height;
+          else top = trigger.top + (trigger.height - contentEl.height) / 2;
           break;
         case "right":
-          top = trigger.top + (trigger.height - contentEl.height) / 2;
           left = trigger.right + offset;
+          if (crossAlign === "start") top = trigger.top;
+          else if (crossAlign === "end") top = trigger.bottom - contentEl.height;
+          else top = trigger.top + (trigger.height - contentEl.height) / 2;
           break;
       }
 
@@ -77,7 +90,7 @@ export default function Tooltip({
     }
 
     measure();
-  }, [position, offset]);
+  }, [position, offset, crossAlign]);
 
   useLayoutEffect(() => {
     if (isOpen) {
@@ -93,8 +106,11 @@ export default function Tooltip({
 
   const handleMouseEnter = (e: React.MouseEvent) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (fadeOutRef.current) clearTimeout(fadeOutRef.current);
     setMousePos({ x: e.clientX, y: e.clientY });
     setIsOpen(true);
+    // Defer to next frame so the portal mounts before we trigger the fade-in
+    requestAnimationFrame(() => setIsVisible(true));
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -102,7 +118,11 @@ export default function Tooltip({
   };
 
   const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => setIsOpen(false), 150);
+    timeoutRef.current = setTimeout(() => {
+      setIsVisible(false);
+      // Unmount after the CSS transition completes (200ms)
+      fadeOutRef.current = setTimeout(() => setIsOpen(false), 200);
+    }, 150);
   };
 
   // Build the safe triangle SVG polygon points.
@@ -116,7 +136,7 @@ export default function Tooltip({
     <>
       <div
         ref={triggerRef}
-        className={`inline-block ${className}`}
+        className={`inline-flex items-center justify-center ${className}`}
         onMouseEnter={handleMouseEnter}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
@@ -153,8 +173,8 @@ export default function Tooltip({
               style={{
                 top: coords?.top ?? 0,
                 left: coords?.left ?? 0,
-                opacity: coords ? 1 : 0,
-                transition: "opacity 0.2s ease-out, transform 0.2s ease-out",
+                opacity: isVisible && coords ? 1 : 0,
+                transition: "opacity 0.2s ease-out",
               }}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}

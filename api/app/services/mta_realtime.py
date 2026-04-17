@@ -1,17 +1,31 @@
 import httpx
-import xml.etree.ElementTree as ET
+from google.transit import gtfs_realtime_pb2
 
-_STATUS_URL = "http://web.mta.info/status/serviceStatus.txt"
+_FEEDS = [
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",      # 1 2 3 4 5 6 7 S
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",  # A C E
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm", # B D F M
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g",    # G
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz",   # J Z
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw", # N Q R W
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",    # L
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",   # SIR
+]
 _TIMEOUT = 10
 
-_STATUS_SEVERITY: dict[str, float] = {
-    "good service":   0.0,
-    "planned work":   0.5,
-    "service change": 1.0,
-    "delays":         2.5,
-    "suspended":      4.0,
+_EFFECT_SEVERITY: dict[int, float] = {
+    1: 4.0,  # NO_SERVICE
+    2: 2.0,  # REDUCED_SERVICE
+    3: 2.5,  # SIGNIFICANT_DELAYS
+    4: 1.0,  # DETOUR
+    5: 0.0,  # ADDITIONAL_SERVICE
+    6: 1.0,  # MODIFIED_SERVICE
+    7: 0.5,  # OTHER_EFFECT
+    8: 0.5,  # UNKNOWN_EFFECT
+    9: 0.0,  # NO_EFFECT
+    10: 0.0, # ACCESSIBILITY_ISSUE
 }
-_DEFAULT_SEVERITY = 1.0
+_DEFAULT_SEVERITY = 0.5
 
 _LINE_COVERAGE: dict[str, list[str]] = {
     "1": ["upper west side", "chelsea", "greenwich village", "tribeca", "financial district"],
@@ -41,27 +55,29 @@ _LINE_COVERAGE: dict[str, list[str]] = {
 
 
 def get_service_status() -> dict[str, dict]:
-    try:
-        resp = httpx.get(_STATUS_URL, timeout=_TIMEOUT)
-        resp.raise_for_status()
-        return _parse_xml(resp.text)
-    except Exception:
-        return {}
+    line_severity: dict[str, float] = {}
 
+    for url in _FEEDS:
+        try:
+            resp = httpx.get(url, timeout=_TIMEOUT)
+            resp.raise_for_status()
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(resp.content)
+            for entity in feed.entity:
+                if not entity.HasField("alert"):
+                    continue
+                effect = entity.alert.effect
+                severity = _EFFECT_SEVERITY.get(effect, _DEFAULT_SEVERITY)
+                if severity == 0.0:
+                    continue
+                for informed in entity.alert.informed_entity:
+                    route = (informed.route_id or informed.trip.route_id).upper().strip()
+                    if route and severity > line_severity.get(route, 0.0):
+                        line_severity[route] = severity
+        except Exception:
+            continue
 
-def _parse_xml(xml_text: str) -> dict[str, dict]:
-    results: dict[str, dict] = {}
-    try:
-        root = ET.fromstring(xml_text)
-        for line_el in root.findall(".//subway/line"):
-            name = (line_el.findtext("name") or "").strip()
-            status_text = (line_el.findtext("status") or "").strip()
-            severity = _STATUS_SEVERITY.get(status_text.lower(), _DEFAULT_SEVERITY)
-            for token in name.split():
-                results[token.upper()] = {"status": status_text, "severity": severity}
-    except ET.ParseError:
-        pass
-    return results
+    return {route: {"severity": sev} for route, sev in line_severity.items()}
 
 
 def get_venue_disruption_severity(neighborhood: str | None, borough: str | None, service_status: dict[str, dict]) -> float:

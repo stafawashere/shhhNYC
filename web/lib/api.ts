@@ -7,23 +7,38 @@ export interface Venue {
    neighborhood: string | null;
    borough: string | null;
    sq_ft: number | null;
-   ceiling_type: string | null;
    seating_type: string[] | null;
+   google_noise_estimate: string | null;
    music_policy: string | null;
-   espresso_position: string | null;
-   has_outlets: boolean | null;
-   wifi_quality: string | null;
-   wifi_policy: string | null;
    serves_food: boolean | null;
    serves_alcohol: boolean | null;
-   kid_friendly: boolean | null;
    price_tier: number | null;
-   noise_level_yelp: string | null;
    nearest_subway_m: number | null;
    google_place_id: string | null;
    photos: string[] | null;
+   opening_hours: OpeningHours | null;
+   phone_number: string | null;
+   website_url: string | null;
+   venue_types: string[] | null;
+   subway_lines_served: string[] | null;
+   pedestrian_volume: number | null;
+   google_review_count: number | null;
+   has_outdoor_seating: boolean | null;
+   is_cabaret: boolean | null;
+   liquor_license_type: string | null;
+   health_grade: string | null;
    lat: number | null;
    lng: number | null;
+}
+
+export interface OpeningHoursPeriod {
+   open: { day: number; time: string };
+   close?: { day: number; time: string };
+}
+
+export interface OpeningHours {
+   weekday_text: string[];
+   periods: OpeningHoursPeriod[];
 }
 
 export interface ScoreBreakdown {
@@ -97,7 +112,7 @@ export interface ConstructionIncident {
    job_type: string;
    filing_status: string;
    borough: string;
-   filing_date: string | null;  // NYC DOB dataset has ~5 day publish lag
+   filing_date: string | null;
 }
 
 export interface NoiseIncident {
@@ -106,7 +121,7 @@ export interface NoiseIncident {
    complaint_type: string;
    descriptor: string;
    borough: string;
-   created_date: string | null; 
+   created_date: string | null;
 }
 
 export interface EventIncident {
@@ -127,5 +142,18 @@ export interface Incidents {
 export async function getIncidents(): Promise<Incidents> {
    const res = await fetch(`${API_BASE}/incidents`);
    if (!res.ok) return { construction: [], noise: [], events: [] };
+   return res.json();
+}
+
+export interface SubwayStation {
+   name: string;
+   lat: number;
+   lng: number;
+   lines: string[];
+}
+
+export async function getSubwayStations(): Promise<SubwayStation[]> {
+   const res = await fetch(`${API_BASE}/subway-stations`);
+   if (!res.ok) return [];
    return res.json();
 }

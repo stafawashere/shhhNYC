@@ -1,73 +1,8 @@
-import math
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
-from sqlalchemy.orm import Session
 from app.models.venue import Venue
-from app.models.user_signal import UserSignal
 
 _NYC_TZ = ZoneInfo("America/New_York")
-
-
-def _weighted_signal_adjustment(recent: list, dow_signals: list, now: datetime) -> float:
-    if not recent and not dow_signals:
-        return 0.0
-
-    total_w, weighted_sum = 0.0, 0.0
-
-    for s in recent:
-        ts = s.timestamp.astimezone(_NYC_TZ)
-        age_h = (now - ts).total_seconds() / 3600
-        w = math.exp(-age_h / 24)
-        total_w += w
-        weighted_sum += w * s.noise_rating
-
-    for s in dow_signals:
-        ts = s.timestamp.astimezone(_NYC_TZ)
-        age_h = (now - ts).total_seconds() / 3600
-        w = math.exp(-age_h / 24) * 0.5
-        total_w += w
-        weighted_sum += w * s.noise_rating
-
-    if total_w == 0:
-        return 0.0
-
-    avg_rating = weighted_sum / total_w
-    return (avg_rating - 3.0) / 2.0 * 10.0
-
-
-def _signal_adjustment(db: Session, venue_id, dt: datetime) -> float:
-    now = datetime.now(_NYC_TZ)
-    cutoff_recent = now - timedelta(hours=72)
-    cutoff_dow    = now - timedelta(days=14)
-
-    recent = (
-        db.query(UserSignal)
-        .filter(UserSignal.venue_id == venue_id, UserSignal.timestamp >= cutoff_recent)
-        .order_by(UserSignal.timestamp.desc())
-        .limit(10)
-        .all()
-    )
-
-    candidates = (
-        db.query(UserSignal)
-        .filter(
-            UserSignal.venue_id == venue_id,
-            UserSignal.timestamp >= cutoff_dow,
-            UserSignal.timestamp < cutoff_recent,
-        )
-        .order_by(UserSignal.timestamp.desc())
-        .limit(20)
-        .all()
-    )
-    dow_signals = [
-        s for s in candidates
-        if (
-            s.timestamp.astimezone(_NYC_TZ).weekday() == dt.weekday()
-            and abs(s.timestamp.astimezone(_NYC_TZ).hour - dt.hour) <= 2
-        )
-    ]
-
-    return _weighted_signal_adjustment(recent, dow_signals, now)
 
 
 def _fallback_noise(venue: Venue, h: int) -> float:
@@ -117,7 +52,7 @@ def _apply_multipliers(base: float, venue: Venue, dt: datetime) -> float:
     return base
 
 
-def temporal_score(db: Session, profile, venue: Venue, dt: datetime, signal_count: int = 0) -> float:
+def temporal_score(_db, profile, venue: Venue, dt: datetime, _signal_count: int = 0) -> float:
     if profile is None:
         return _fallback_noise(venue, dt.hour)
 
@@ -127,14 +62,10 @@ def temporal_score(db: Session, profile, venue: Venue, dt: datetime, signal_coun
         base = profile.busyness_avg * 0.5
 
     base = _apply_multipliers(base, venue, dt)
-
-    if signal_count > 0:
-        base += _signal_adjustment(db, venue.id, dt)
-
     return max(0.0, min(50.0, base))
 
 
-def temporal_score_from_data(profile, venue: Venue, dt: datetime, recent_signals: list, dow_signals: list,) -> float:
+def temporal_score_from_data(profile, venue: Venue, dt: datetime, _recent_signals: list = None, _dow_signals: list = None) -> float:
     if profile is None:
         return _fallback_noise(venue, dt.hour)
 
@@ -144,9 +75,4 @@ def temporal_score_from_data(profile, venue: Venue, dt: datetime, recent_signals
         base = profile.busyness_avg * 0.5
 
     base = _apply_multipliers(base, venue, dt)
-
-    if recent_signals or dow_signals:
-        now = datetime.now(_NYC_TZ)
-        base += _weighted_signal_adjustment(recent_signals, dow_signals, now)
-
     return max(0.0, min(50.0, base))

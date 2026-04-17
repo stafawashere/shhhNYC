@@ -5,8 +5,7 @@ from app.config import settings
 _FORECAST_URL = "https://besttime.app/api/v1/forecasts"
 _NOW_URL = "https://besttime.app/api/v1/forecasts/now"
 _WEEK_URL = "https://besttime.app/api/v1/forecasts/week"
-
-# intensity_nr → busyness 0-100
+_VID_TTL = 60 * 60 * 24 * 30
 _INTENSITY_TO_BUSYNESS: dict[int, float] = {
     -2: 10.0,
     -1: 30.0,
@@ -16,9 +15,6 @@ _INTENSITY_TO_BUSYNESS: dict[int, float] = {
      3: 95.0,
    999:  0.0,  # closed
 }
-
-# venue_ids cached 30 days — key: besttime:vid:{google_place_id}
-_VID_TTL = 60 * 60 * 24 * 30
 
 
 def _redis() -> redis.Redis:

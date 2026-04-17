@@ -25,19 +25,14 @@ def create_venue(body: CreateVenueRequest, db: Session = Depends(get_db)):
         neighborhood=body.neighborhood,
         borough=body.borough,
         sq_ft=body.sq_ft,
-        ceiling_type=body.ceiling_type,
         seating_type=body.seating_type,
         music_policy=body.music_policy,
-        espresso_position=body.espresso_position,
-        has_outlets=body.has_outlets,
-        wifi_quality=body.wifi_quality,
-        wifi_policy=body.wifi_policy,
         serves_food=body.serves_food,
         serves_alcohol=body.serves_alcohol,
-        kid_friendly=body.kid_friendly,
         price_tier=body.price_tier,
         google_place_id=body.google_place_id,
     )
+
     db.add(venue)
     db.commit()
     db.refresh(venue)

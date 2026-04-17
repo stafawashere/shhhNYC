@@ -21,5 +21,11 @@ celery[redis]
 # HTTP client (for external APIs)
 httpx
 
+# MTA GTFS-RT feed parsing
+gtfs-realtime-bindings
+
 # Env
 python-dotenv
+anthropic
+sentence-transformers
+tripadvisor

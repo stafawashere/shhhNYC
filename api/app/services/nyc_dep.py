@@ -46,6 +46,37 @@ def get_dep_noise_complaints(lat: float, lng: float, radius_m: float = 300, days
         return []
 
 
+def analyze_complaints(complaints: list[dict]) -> dict:
+    if not complaints:
+        return {"level": None, "count": 0, "severe_count": 0, "source": None}
+
+    count = len(complaints)
+    severe_count = sum(1 for c in complaints if c.get("complaint_type") in _SEVERE_TYPES)
+
+    db_readings: list[float] = []
+    for c in complaints:
+        text = c.get("resolution_description") or ""
+        for match in _DB_RE.findall(text):
+            val = float(match)
+            if 30.0 <= val <= 130.0:
+                db_readings.append(val)
+
+    if db_readings:
+        avg_db = sum(db_readings) / len(db_readings)
+        normalized = max(0.0, min(100.0, (avg_db - _DB_MIN) / _DB_RANGE * 100.0))
+        return {"level": round(normalized, 1), "count": count, "severe_count": severe_count, "source": "dB"}
+
+    base = math.log1p(count) / math.log1p(150) * 85.0
+    severe_ratio = severe_count / count if count else 0.0
+    severity_bonus = severe_ratio * 15.0
+    return {
+        "level": round(min(100.0, base + severity_bonus), 1),
+        "count": count,
+        "severe_count": severe_count,
+        "source": "count",
+    }
+
+
 def estimate_noise_level(complaints: list[dict]) -> float | None:
     if not complaints:
         return None
@@ -65,6 +96,7 @@ def estimate_noise_level(complaints: list[dict]) -> float | None:
 
     count = len(complaints)
     severe_count = sum(1 for c in complaints if c.get("complaint_type") in _SEVERE_TYPES)
-    base = min(80.0, math.log1p(count) / math.log1p(30) * 80.0)
-    severity_bonus = min(15.0, severe_count * 3.0)
-    return round(min(95.0, base + severity_bonus), 1)
+    base = math.log1p(count) / math.log1p(150) * 85.0
+    severe_ratio = severe_count / count if count else 0.0
+    severity_bonus = severe_ratio * 15.0
+    return round(min(100.0, base + severity_bonus), 1)

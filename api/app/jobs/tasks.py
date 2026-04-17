@@ -1,13 +1,13 @@
 from celery import Celery
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from app.config import settings
 from app.db.session import SessionLocal
 from app.models.venue import Venue
-from app.models.realtime_modifier import RealtimeModifier
+from app.models.signal_event import SignalEvent
 from app.models.hourly_profile import VenueHourlyProfile
-from app.services import google_places, openweather, nyc_opendata, besttime, tomtom, yelp, mta, mta_realtime, nyc_dep
+from app.services import google_places, openweather, nyc_opendata, besttime, tomtom, review_nlp, mta, mta_realtime, nyc_dep, nyc_civic
 from geoalchemy2.shape import to_shape
 from celery.signals import worker_process_init
 from app.db.session import engine
@@ -15,9 +15,11 @@ from app.db.session import engine
 logger = logging.getLogger(__name__)
 celery = Celery("shhhnyc", broker=settings.redis_url, backend=settings.redis_url)
 
+
 @worker_process_init.connect
 def dispose_engine_on_fork(**kwargs):
     engine.dispose(close=False)
+
 
 def _all_venues(db):
     return db.query(Venue).filter(Venue.google_place_id.isnot(None)).all()
@@ -27,15 +29,8 @@ def _coords(venue: Venue) -> tuple[float, float]:
     pt = to_shape(venue.location)
     return pt.y, pt.x
 
-
-def _latest_modifier(db, venue_id):
-    return (
-        db.query(RealtimeModifier)
-        .filter(RealtimeModifier.venue_id == venue_id)
-        .order_by(RealtimeModifier.timestamp.desc())
-        .first()
-    )
-
+def _insert_signal(db, venue_id, signal_type: str, value: dict) -> None:
+    db.add(SignalEvent(venue_id=venue_id, signal_type=signal_type, value=value))
 
 def _upsert_hourly_profile(db, venue_id, day: int, hour: int, busyness: float) -> None:
     profile = db.query(VenueHourlyProfile).filter(
@@ -43,6 +38,7 @@ def _upsert_hourly_profile(db, venue_id, day: int, hour: int, busyness: float) -
         VenueHourlyProfile.day_of_week == day,
         VenueHourlyProfile.hour == hour,
     ).first()
+
     if profile:
         profile.busyness_avg = busyness
     else:
@@ -53,17 +49,18 @@ def _upsert_hourly_profile(db, venue_id, day: int, hour: int, busyness: float) -
             busyness_avg=busyness,
         ))
 
-
 def _throttle(task_name: str, cooldown_seconds: int = 600) -> bool:
     try:
         key = f"throttle_{task_name}"
         if hasattr(celery.backend, 'client'):
             if celery.backend.client.get(key):
                 return False
+
             celery.backend.client.set(key, "1", ex=cooldown_seconds)
         else:
             if celery.backend.get(key):
                 return False
+
             celery.backend.set(key, "1")
         return True
     except Exception:
@@ -77,38 +74,20 @@ def refresh_weather():
     weather = openweather.get_current_weather()
     if not weather:
         return
+
     modifier = openweather.weather_to_modifier(weather)
-    if hasattr(celery.backend, 'client'):
-        celery.backend.client.set("nyc_weather", str(modifier), ex=1800)
-    else:
-        celery.backend.set("nyc_weather", str(modifier))
-
-
-@celery.task
-def refresh_live_busyness():
-    if not _throttle("live_busyness"): return
-
-    cached = celery.backend.get("nyc_weather")
-    weather_modifier = float(cached) if cached else 0.0
+    try:
+        if hasattr(celery.backend, 'client'):
+            celery.backend.client.set("nyc_weather", str(modifier), ex=1800)
+        else:
+            celery.backend.set("nyc_weather", str(modifier))
+    except Exception:
+        pass
 
     db = SessionLocal()
     try:
         for venue in _all_venues(db):
-            vid = besttime._cached_venue_id(venue.google_place_id)
-            live = besttime.get_live_busyness(vid) if vid else None
-
-            existing = _latest_modifier(db, venue.id)
-
-            if existing:
-                existing.google_live_busyness = live
-                existing.weather_modifier = weather_modifier
-                existing.timestamp = datetime.now(timezone.utc)
-            else:
-                db.add(RealtimeModifier(
-                    venue_id=venue.id,
-                    google_live_busyness=live,
-                    weather_modifier=weather_modifier,
-                ))
+            _insert_signal(db, venue.id, "weather", {"modifier": modifier})
         db.commit()
     finally:
         db.close()
@@ -118,62 +97,46 @@ def refresh_live_busyness():
 def refresh_events():
     if not _throttle("events"): return
 
-    events = nyc_opendata.get_street_events(date.today())
-    borough_event_count = len(events)
-
+    events   = nyc_opendata.get_street_events(date.today())
     hotspots = nyc_opendata.get_citywide_noise_hotspots()
-
     db = SessionLocal()
     try:
         for venue in _all_venues(db):
             if venue.borough and venue.borough.lower() != "manhattan":
                 continue
+
             lat, lng = _coords(venue)
+            local_events = [
+                e for e in events
+                if e.get("latitude") and e.get("longitude")
+                and nyc_opendata._dist_m(lat, lng, float(e["latitude"]), float(e["longitude"])) <= 2000
+            ]
 
-            neighborhood = (venue.neighborhood or "").lower().strip()
-            local_events = (
-                [e for e in events
-                 if neighborhood and neighborhood in (e.get("event_location") or "").lower()]
-                if neighborhood else []
-            )
-            if local_events:
-                proximity_event_count = len(local_events)
-                event_description = local_events[0].get("event_name", "") or None
-            else:
-                proximity_event_count = borough_event_count // 4
-                first_borough_event = events[0].get("event_name", "") if events else ""
-                event_description = first_borough_event or None
+            if not local_events:
+                neighborhood = (venue.neighborhood or "").lower().strip()
+                local_events = [
+                    e for e in events
+                    if not (e.get("latitude") and e.get("longitude"))
+                    and neighborhood and neighborhood in (e.get("event_location") or "").lower()
+                ]
 
+            event_count = len(local_events)
+            event_description = local_events[0].get("event_name") or None if local_events else None
             complaint_count = sum(
                 1 for h in hotspots
                 if h.get("latitude") and h.get("longitude")
                 and nyc_opendata._dist_m(lat, lng, float(h["latitude"]), float(h["longitude"])) <= 300
             )
 
-            existing = _latest_modifier(db, venue.id)
-            if existing:
-                existing.event_count = proximity_event_count
-                existing.event_description = event_description
-                existing.noise_complaint_count = complaint_count
-                existing.timestamp = datetime.now(timezone.utc)
-            else:
-                db.add(RealtimeModifier(
-                    venue_id=venue.id,
-                    event_count=proximity_event_count,
-                    event_description=event_description,
-                    noise_complaint_count=complaint_count,
-                ))
-        db.commit()
-    finally:
-        db.close()
+            _insert_signal(db, venue.id, "events", {
+                "count":       event_count,
+                "description": event_description,
+            })
 
+            _insert_signal(db, venue.id, "noise_complaints", {
+                "count": complaint_count,
+            })
 
-@celery.task
-def prune_realtime_modifiers():
-    db = SessionLocal()
-    try:
-        cutoff = datetime.now(ZoneInfo("America/New_York")) - timedelta(days=7)
-        db.query(RealtimeModifier).filter(RealtimeModifier.timestamp < cutoff).delete()
         db.commit()
     finally:
         db.close()
@@ -184,27 +147,17 @@ def refresh_construction():
     if not _throttle("construction"): return
 
     all_permits = nyc_opendata.get_citywide_construction()
-
     db = SessionLocal()
     try:
         for venue in _all_venues(db):
             lat, lng = _coords(venue)
-
             has_construction = any(
                 nyc_opendata._dist_m(lat, lng, float(p["latitude"]), float(p["longitude"])) <= 150
                 for p in all_permits
                 if p.get("latitude") and p.get("longitude")
             )
 
-            existing = _latest_modifier(db, venue.id)
-            if existing:
-                existing.construction_nearby = has_construction
-                existing.timestamp = datetime.now(timezone.utc)
-            else:
-                db.add(RealtimeModifier(
-                    venue_id=venue.id,
-                    construction_nearby=has_construction,
-                ))
+            _insert_signal(db, venue.id, "construction", {"nearby": has_construction})
         db.commit()
     finally:
         db.close()
@@ -218,53 +171,81 @@ def refresh_tomtom_data():
     try:
         for venue in _all_venues(db):
             lat, lng = _coords(venue)
-            flow = tomtom.get_traffic_flow(lat, lng)
+            flow      = tomtom.get_traffic_flow(lat, lng)
             incidents = tomtom.get_traffic_incidents(lat, lng)
-            
+
             if flow is None and not incidents:
-                logger.warning(f"Failed to retrieve TomTom data for venue {venue.id} ({venue.name})")
+                logger.warning(f"failed to retrieve TomTom data for venue {venue.id} ({venue.name})")
                 continue
 
             congestion_ratio, incident_severity = tomtom.compute_noise_penalty(flow, incidents)
-
-            existing = _latest_modifier(db, venue.id)
-            if existing:
-                existing.tomtom_traffic_congestion = congestion_ratio
-                existing.tomtom_incidents_nearby = incident_severity
-                existing.timestamp = datetime.now(timezone.utc)
-            else:
-                db.add(RealtimeModifier(
-                    venue_id=venue.id,
-                    tomtom_traffic_congestion=congestion_ratio,
-                    tomtom_incidents_nearby=incident_severity,
-                ))
+            _insert_signal(db, venue.id, "tomtom", {
+                "congestion": congestion_ratio,
+                "incidents":  incident_severity,
+            })
         db.commit()
     finally:
         db.close()
 
 
 @celery.task
-def refresh_yelp_noise():
-    if not _throttle("yelp_noise", cooldown_seconds=86400): return  # once a day max
+def refresh_mta_alerts():
+    if not _throttle("mta_alerts"): return
+
+    status = mta_realtime.get_service_status()
+    db = SessionLocal()
+
+    try:
+        for venue in _all_venues(db):
+            severity = mta_realtime.get_venue_disruption_severity(
+                venue.neighborhood, venue.borough, status
+            )
+            _insert_signal(db, venue.id, "mta", {"severity": severity})
+        db.commit()
+    finally:
+        db.close()
+
+
+@celery.task
+def refresh_dep_noise():
+    if not _throttle("dep_noise", cooldown_seconds=86400 * 7): return
 
     db = SessionLocal()
     try:
         for venue in _all_venues(db):
-            lat, lng = _coords(venue)
-            yelp_id = yelp.find_business_id(venue.name, lat, lng, venue.google_place_id)
-            if not yelp_id:
+            lat, lng   = _coords(venue)
+            complaints = nyc_dep.get_dep_noise_complaints(lat, lng, radius_m=300, days=30)
+            analysis   = nyc_dep.analyze_complaints(complaints)
+            if analysis["level"] is None:
                 continue
+            _insert_signal(db, venue.id, "dep_noise", {
+                "level":         analysis["level"],
+                "complaint_count": analysis["count"],
+                "severe_count":  analysis["severe_count"],
+            })
 
-            noise_estimate, raw_level = yelp.get_noise_level(yelp_id)
-            if noise_estimate is None:
-                continue
+        db.commit()
+    finally:
+        db.close()
 
-            if raw_level is not None:
-                venue.noise_level_yelp = raw_level
 
-            db.query(VenueHourlyProfile).filter(
-                VenueHourlyProfile.venue_id == venue.id
-            ).update({"noise_estimate": noise_estimate})
+@celery.task
+def prune_signal_events():
+    db = SessionLocal()
+    try:
+        now = datetime.now(ZoneInfo("America/New_York"))
+        cutoff_normal = now - timedelta(days=7)
+        cutoff_dep    = now - timedelta(days=30)
+
+        db.query(SignalEvent).filter(
+            SignalEvent.signal_type != "dep_noise",
+            SignalEvent.captured_at  < cutoff_normal,
+        ).delete(synchronize_session=False)
+
+        db.query(SignalEvent).filter(
+            SignalEvent.signal_type == "dep_noise",
+            SignalEvent.captured_at  < cutoff_dep,
+        ).delete(synchronize_session=False)
 
         db.commit()
     finally:
@@ -273,21 +254,39 @@ def refresh_yelp_noise():
 
 @celery.task
 def refresh_subway_proximity():
-    if not _throttle("subway_proximity", cooldown_seconds=86400 * 7): return  # weekly
+    if not _throttle("subway_proximity", cooldown_seconds=86400 * 7): return
 
-    entrances = mta.fetch_subway_entrances()
-    if not entrances:
+    stations = mta.fetch_subway_stations()
+    if not stations:
+        entrances = mta.fetch_subway_entrances()
+        if not entrances:
+            return
+        db = SessionLocal()
+        try:
+            for venue in _all_venues(db):
+                lat, lng = _coords(venue)
+                nearest = min(nyc_opendata._dist_m(lat, lng, e_lat, e_lng) for e_lat, e_lng in entrances)
+                venue.nearest_subway_m = round(nearest)
+            db.commit()
+        finally:
+            db.close()
         return
 
     db = SessionLocal()
     try:
         for venue in _all_venues(db):
             lat, lng = _coords(venue)
-            nearest = min(
-                nyc_opendata._dist_m(lat, lng, e_lat, e_lng)
-                for e_lat, e_lng in entrances
-            )
-            venue.nearest_subway_m = round(nearest)
+            best_dist = None
+            best_lines: list[str] = []
+            for station in stations:
+                d = nyc_opendata._dist_m(lat, lng, station["lat"], station["lng"])
+                if best_dist is None or d < best_dist:
+                    best_dist = d
+                    best_lines = station.get("lines") or []
+            if best_dist is not None:
+                venue.nearest_subway_m = round(best_dist)
+            if best_lines:
+                venue.subway_lines_served = sorted(best_lines)
         db.commit()
     finally:
         db.close()
@@ -301,14 +300,13 @@ def refresh_google_review_noise():
     try:
         for venue in _all_venues(db):
             reviews, review_count = google_places.get_review_data(venue.google_place_id)
-
             if review_count is not None:
                 venue.google_review_count = review_count
 
             if not reviews:
                 continue
 
-            sentiment = yelp.extract_noise_sentiment(reviews)
+            sentiment, net_signal = review_nlp.score_reviews(reviews)
             if sentiment is None:
                 continue
 
@@ -320,8 +318,9 @@ def refresh_google_review_noise():
                 category = "moderate"
 
             venue.google_noise_estimate = category
+            venue.google_review_signal  = net_signal
 
-            if venue.noise_level_yelp is None:
+            if True:
                 noise_estimate = round((1.0 - sentiment) / 2.0 * 100.0, 1)
                 db.query(VenueHourlyProfile).filter(
                     VenueHourlyProfile.venue_id == venue.id
@@ -355,57 +354,6 @@ def refresh_noise_complaint_baseline():
 
 
 @celery.task
-def refresh_mta_alerts():
-    if not _throttle("mta_alerts"): return
-
-    status = mta_realtime.get_service_status()
-    if not status:
-        return
-
-    db = SessionLocal()
-    try:
-        for venue in _all_venues(db):
-            severity = mta_realtime.get_venue_disruption_severity(
-                venue.neighborhood, venue.borough, status
-            )
-            existing = _latest_modifier(db, venue.id)
-            if existing:
-                existing.mta_disruption_severity = severity
-                existing.timestamp = datetime.now(timezone.utc)
-            else:
-                db.add(RealtimeModifier(
-                    venue_id=venue.id,
-                    mta_disruption_severity=severity,
-                ))
-        db.commit()
-    finally:
-        db.close()
-
-
-@celery.task
-def refresh_dep_noise():
-    if not _throttle("dep_noise", cooldown_seconds=86400 * 7): return
-
-    db = SessionLocal()
-    try:
-        for venue in _all_venues(db):
-            lat, lng = _coords(venue)
-            complaints = nyc_dep.get_dep_noise_complaints(lat, lng, radius_m=300, days=90)
-            noise_level = nyc_dep.estimate_noise_level(complaints)
-            if noise_level is None:
-                continue
-
-            existing = _latest_modifier(db, venue.id)
-            if existing:
-                existing.dep_noise_level = noise_level
-            else:
-                db.add(RealtimeModifier(venue_id=venue.id, dep_noise_level=noise_level))
-        db.commit()
-    finally:
-        db.close()
-
-
-@celery.task
 def refresh_nta_baseline():
     if not _throttle("nta_baseline", cooldown_seconds=86400 * 7): return
 
@@ -422,6 +370,29 @@ def refresh_nta_baseline():
 
 
 @celery.task
+def refresh_civic_data():
+    if not _throttle("civic_data", cooldown_seconds=86400 * 30): return
+
+    db = SessionLocal()
+    try:
+        for venue in _all_venues(db):
+            enrichment = nyc_civic.enrich_venue(venue.name, venue.address, venue.borough)
+            if not enrichment:
+                continue
+            if "has_outdoor_seating" in enrichment and venue.has_outdoor_seating is None:
+                venue.has_outdoor_seating = enrichment["has_outdoor_seating"]
+            if "is_cabaret" in enrichment and venue.is_cabaret is None:
+                venue.is_cabaret = enrichment["is_cabaret"]
+            if "liquor_license_type" in enrichment and not venue.liquor_license_type:
+                venue.liquor_license_type = enrichment["liquor_license_type"]
+            if "health_grade" in enrichment and not venue.health_grade:
+                venue.health_grade = enrichment["health_grade"]
+        db.commit()
+    finally:
+        db.close()
+
+
+@celery.task
 def refresh_pedestrian_counts():
     if not _throttle("pedestrian_counts", cooldown_seconds=86400 * 7): return
 
@@ -432,6 +403,7 @@ def refresh_pedestrian_counts():
             count = nyc_opendata.get_pedestrian_count_near(lat, lng, radius_m=400)
             if count is not None:
                 venue.pedestrian_volume = count
+
         db.commit()
     finally:
         db.close()
@@ -439,7 +411,7 @@ def refresh_pedestrian_counts():
 
 @celery.task
 def refresh_venue_photos(force: bool = False):
-    if not force and not _throttle("venue_photos", cooldown_seconds=86400 * 7): 
+    if not force and not _throttle("venue_photos", cooldown_seconds=86400 * 7):
         return
 
     db = SessionLocal()
@@ -448,14 +420,52 @@ def refresh_venue_photos(force: bool = False):
         for venue in _all_venues(db):
             if not venue.google_place_id:
                 continue
-                
+
             refs = google_places.get_photo_references(venue.google_place_id, max_photos=3)
             if refs:
                 venue.photos = refs
                 updated_count += 1
-        
+
         if updated_count > 0:
             db.commit()
+    finally:
+        db.close()
+
+
+_FOOD_TYPES = {"cafe", "restaurant", "food", "bakery", "meal_takeaway", "meal_delivery", "coffee_shop"}
+_ALCOHOL_TYPES = {"bar", "beer_bar", "wine_bar", "liquor_store", "night_club", "cocktail_bar"}
+
+
+@celery.task
+def refresh_venue_details():
+    if not _throttle("venue_details", cooldown_seconds=86400 * 7): return
+
+    db = SessionLocal()
+    try:
+        for venue in _all_venues(db):
+            if not venue.google_place_id:
+                continue
+            details = google_places.get_venue_extra_details(venue.google_place_id)
+            if not details:
+                continue
+            if details.get("phone_number"):
+                venue.phone_number = details["phone_number"]
+            if details.get("website_url"):
+                venue.website_url = details["website_url"]
+            if details.get("venue_types"):
+                venue.venue_types = details["venue_types"]
+                type_set = set(details["venue_types"])
+                if venue.serves_food is None:
+                    venue.serves_food = bool(type_set & _FOOD_TYPES)
+                if venue.serves_alcohol is None:
+                    venue.serves_alcohol = bool(type_set & _ALCOHOL_TYPES)
+            if details.get("price_tier") is not None and venue.price_tier is None:
+                venue.price_tier = details["price_tier"]
+            if details.get("neighborhood") and not venue.neighborhood:
+                venue.neighborhood = details["neighborhood"]
+            if details.get("borough") and not venue.borough:
+                venue.borough = details["borough"]
+        db.commit()
     finally:
         db.close()
 
@@ -475,8 +485,14 @@ def refresh_popular_times():
                 if analysis:
                     matrix = besttime.week_to_hourly_matrix(analysis)
 
-            if not matrix:
-                matrix = google_places.get_popular_times(venue.google_place_id)
+            if venue.google_place_id:
+                details = google_places.get_place_details(venue.google_place_id)
+                if details:
+                    if not matrix:
+                        matrix = google_places.extract_popular_times_matrix(details)
+                    hours_data = google_places.extract_opening_hours(details)
+                    if hours_data:
+                        venue.opening_hours = hours_data
 
             if not matrix:
                 continue

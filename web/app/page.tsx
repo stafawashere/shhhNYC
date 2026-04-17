@@ -1,26 +1,22 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { getNearbyVenues, VenueWithScore } from "@/lib/api";
+import { openNowStatus } from "@/lib/openingHours";
 import MapView from "@/components/Map/MapView";
 import FilterBar, { Filters, DEFAULT_FILTERS } from "@/components/Controls/FilterBar";
 
 const DEFAULT_LAT = 40.7282;
 const DEFAULT_LNG = -73.9973;
 
-const WIFI_RANK: Record<string, number> = { poor: 0, fair: 1, good: 2, excellent: 3 };
 
-function SoundIcon() {
+function Logo() {
    return (
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" className="text-emerald-400 shrink-0">
-         <rect x="1" y="7" width="2" height="6" rx="1" fill="currentColor" opacity="0.5"/>
-         <rect x="5" y="4" width="2" height="12" rx="1" fill="currentColor" opacity="0.7"/>
-         <rect x="9" y="2" width="2" height="16" rx="1" fill="currentColor"/>
-         <rect x="13" y="4" width="2" height="12" rx="1" fill="currentColor" opacity="0.7"/>
-         <rect x="17" y="7" width="2" height="6" rx="1" fill="currentColor" opacity="0.5"/>
-      </svg>
+      <img src="/icon.png" alt="ShhhNYC" width={45} height={45} className="shrink-0" />
    );
 }
+
+const REFRESH_MS = 2 * 60 * 1000; // 2 minutes — matches backend live-signal cadence
 
 export default function Home() {
    const [venues, setVenues] = useState<VenueWithScore[]>([]);
@@ -29,13 +25,29 @@ export default function Home() {
    const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
    const [mobileOpen, setMobileOpen] = useState(false);
    const [selected, setSelected] = useState<VenueWithScore | null>(null);
+   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+   const [refreshing, setRefreshing] = useState(false);
+
+   const fetchVenues = useCallback((silent = false) => {
+      if (!silent) return; // initial load handled separately
+      setRefreshing(true);
+      getNearbyVenues(DEFAULT_LAT, DEFAULT_LNG, 5)
+         .then(data => { setVenues(data); setLastUpdated(new Date()); })
+         .catch(() => null)
+         .finally(() => setRefreshing(false));
+   }, []);
 
    useEffect(() => {
       getNearbyVenues(DEFAULT_LAT, DEFAULT_LNG, 5)
-         .then(setVenues)
+         .then(data => { setVenues(data); setLastUpdated(new Date()); })
          .catch(() => setError("Could not load venues"))
          .finally(() => setLoading(false));
    }, []);
+
+   useEffect(() => {
+      const id = setInterval(() => fetchVenues(true), REFRESH_MS);
+      return () => clearInterval(id);
+   }, [fetchVenues]);
 
    const neighborhoods = useMemo(
       () => Array.from(new Set(venues.map((v) => v.venue.neighborhood).filter(Boolean))) as string[],
@@ -46,15 +58,14 @@ export default function Home() {
       return venues.filter((v) => {
          const { venue } = v;
          if (filters.neighborhood && venue.neighborhood !== filters.neighborhood) return false;
-         if (filters.outlets && !venue.has_outlets) return false;
          if (filters.food && !venue.serves_food) return false;
-         if (filters.alcohol && !venue.serves_alcohol) return false;
-         if (filters.kid_friendly && !venue.kid_friendly) return false;
+         if (filters.outdoor_seating && !venue.has_outdoor_seating) return false;
          if (filters.max_price > 0 && venue.price_tier && venue.price_tier > filters.max_price) return false;
-         if (filters.wifi && venue.wifi_quality) {
-            if (WIFI_RANK[venue.wifi_quality] < WIFI_RANK[filters.wifi]) return false;
-         }
          if (filters.min_score > 0 && v.score.quiet_score < filters.min_score) return false;
+         if (filters.open_now) {
+            const status = openNowStatus(venue.opening_hours);
+            if (!status || !status.open) return false;
+         }
          return true;
       });
    }, [venues, filters]);
@@ -70,7 +81,7 @@ export default function Home() {
    }
 
    return (
-      <div className="w-screen h-screen relative bg-zinc-950">
+      <div className="w-full h-screen overflow-hidden relative bg-zinc-950">
          {error ? (
             <div className="flex items-center justify-center h-full text-zinc-500">{error}</div>
          ) : (
@@ -87,9 +98,13 @@ export default function Home() {
          {/* desktop: floating glass panel top-left */}
          <div className="hidden md:block absolute top-4 left-4 z-20 w-84 rounded-2xl bg-zinc-900/80 backdrop-blur-md border border-zinc-700/50 shadow-2xl p-4">
             <div className="flex items-center gap-2 mb-4">
-               <SoundIcon />
-               <span className="text-sm font-bold text-zinc-50 tracking-tight">ShhhNYC</span>
-               <span className="text-xs text-zinc-500 ml-auto">{filtered.length} spots</span>
+               <Logo />
+               <div className="ml-auto flex items-center gap-1.5">
+                  {refreshing && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                  <span className="text-xs text-zinc-500">
+                     {filtered.length < venues.length ? `${filtered.length} of ${venues.length} venues` : `${venues.length} venues`}
+                  </span>
+               </div>
             </div>
             <FilterBar
                filters={filters}
@@ -103,9 +118,10 @@ export default function Home() {
 
          {/* mobile: top strip */}
          <div className="md:hidden absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 bg-zinc-900/90 backdrop-blur-md border-b border-zinc-800">
-            <SoundIcon />
-            <span className="text-sm font-bold text-zinc-50">ShhhNYC</span>
-            <span className="text-xs text-zinc-500 ml-1">{filtered.length} spots</span>
+            <Logo />
+            <span className="text-xs text-zinc-500 ml-1">
+               {filtered.length < venues.length ? `${filtered.length} of ${venues.length} venues` : `${venues.length} venues`}
+            </span>
             <button
                onClick={() => handleMobileOpen(!mobileOpen)}
                className={`ml-auto px-3 py-1 rounded-full text-xs font-medium border transition-colors ${

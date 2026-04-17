@@ -1,16 +1,21 @@
 from datetime import date
 from fastapi import APIRouter
 from app.services import nyc_opendata
+from app.services.mta import fetch_subway_stations
 
-router = APIRouter(prefix="/incidents", tags=["incidents"])
+router = APIRouter(tags=["incidents"])
 
 
-@router.get("")
+@router.get("/subway-stations")
+def get_subway_stations():
+    return fetch_subway_stations()
+
+
+@router.get("/incidents")
 def get_incidents():
     construction_raw = nyc_opendata.get_citywide_construction(limit=300)
     noise_raw = nyc_opendata.get_citywide_noise_hotspots(limit=200, days=10)
     events_raw = nyc_opendata.get_street_events(date.today())
-
     construction = []
     for p in construction_raw:
         try:
@@ -39,20 +44,18 @@ def get_incidents():
         except (KeyError, ValueError, TypeError):
             continue
 
-    events = [
-        {
-            "event_name": e.get("event_name") or e.get("event_type") or "Street Event",
-            "event_type": e.get("event_type", ""),
-            "event_borough": e.get("event_borough", ""),
-            "event_location": e.get("event_location", ""),
-            "street_closure_type": e.get("street_closure_type", ""),
-            "start_date_time": e.get("start_date_time", ""),
-        }
-        for e in events_raw
-    ]
-
     return {
         "construction": construction,
         "noise": noise,
-        "events": events,
+        "events": [
+            {
+                "event_name": e.get("event_name") or e.get("event_type") or "Street Event",
+                "event_type": e.get("event_type", ""),
+                "event_borough": e.get("event_borough", ""),
+                "event_location": e.get("event_location", ""),
+                "street_closure_type": e.get("street_closure_type", ""),
+                "start_date_time": e.get("start_date_time", ""),
+            }
+            for e in events_raw
+        ],
     }

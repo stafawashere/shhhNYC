@@ -3,18 +3,15 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from app.models.venue import Venue
+from app.models.signal_event import SIGNAL_TTLS, SIGNAL_CONFIDENCE
 from app.db.queries import (
     get_hourly_profile,
-    get_latest_realtime,
-    count_recent_signals,
+    get_latest_signals,
     count_profile_slots,
-    get_signal_metrics,
-    _compute_signal_confidence,
-    _compute_user_avg,
 )
 from app.scoring.static import static_score
 from app.scoring.temporal import temporal_score, temporal_score_from_data
-from app.scoring.realtime import realtime_score
+from app.scoring.realtime import realtime_score, Signals
 
 _NYC_TZ = ZoneInfo("America/New_York")
 _MAX_NOISE = 115.0
@@ -41,56 +38,27 @@ def _to_category(level: str | None) -> str | None:
     return None
 
 
-def _user_avg_to_category(avg: float | None) -> str | None:
-    if avg is None:  return None
-    if avg < 2.0:    return "quiet"
-    if avg < 3.5:    return "moderate"
-    return "loud"
-
-
-def _consensus_bonus(venue: Venue, user_avg: float | None) -> float:
-    cats: list[str] = []
-    c = _to_category(venue.noise_level_yelp)
-    if c: cats.append(c)
-    c = _to_category(venue.google_noise_estimate)
-    if c: cats.append(c)
-    c = _user_avg_to_category(user_avg)
-    if c: cats.append(c)
-
-    if len(cats) < 2:
-        return 0.0
-    if len(set(cats)) == 1:
-        return 0.15 if len(cats) >= 3 else 0.10
-    return 0.0
-
-
-def compute_confidence(venue: Venue, profile, rt_row, slot_count: int, sig_score: float, user_avg: float | None = None,) -> float:
+def compute_confidence(venue: Venue, profile, signals: Signals, slot_count: int) -> float:
+    now = datetime.now(_NYC_TZ)
+    score = 0.0
     if slot_count > 0:
-        score = 0.05 + 0.25 * min(1.0, slot_count / 112)
-    else:
-        score = 0.00
+        score += 0.05 + 0.25 * min(1.0, slot_count / 112)
 
     if profile is not None and profile.busyness_avg is not None:
         score += 0.05
 
-    if venue.noise_level_yelp is not None:
-        score += 0.08
-
     if venue.google_noise_estimate is not None:
         score += 0.07 * _review_count_factor(venue.google_review_count)
 
-    if rt_row is not None:
-        age_min = (datetime.now(_NYC_TZ) - rt_row.timestamp.astimezone(_NYC_TZ)).total_seconds() / 60
-        if age_min < 30:    score += 0.18
-        elif age_min < 90:  score += 0.10
-        elif age_min < 360: score += 0.03
-
-        if rt_row.tomtom_traffic_congestion is not None: score += 0.07
-        if rt_row.google_live_busyness is not None:      score += 0.04
-        if rt_row.dep_noise_level is not None:           score += 0.10
-
-    score += sig_score
-    score += _consensus_bonus(venue, user_avg)
+    for sig_type, max_contrib in SIGNAL_CONFIDENCE.items():
+        entry = signals.get(sig_type)
+        if entry is None:
+            continue
+        _, captured_at = entry
+        ttl_min = SIGNAL_TTLS[sig_type]
+        age_min = (now - captured_at.astimezone(_NYC_TZ)).total_seconds() / 60
+        if age_min <= ttl_min:
+            score += max_contrib
 
     return round(min(1.0, score), 2)
 
@@ -106,54 +74,42 @@ def _get_complaint_baseline(venue_id) -> float:
         return 0.0
 
 
-def _build_score_dict(venue: Venue, profile, rt_row, slot_count: int, sig_score: float, user_avg: float | None, s: float, t: float, r: float, tp: float) -> dict:
+def _build_score_dict(venue: Venue, profile, signals: Signals, slot_count: int, s: float, t: float, r: float, tp: float) -> dict:
     noise_raw = max(0.0, s + t + r + tp)
     score = max(0.0, min(100.0, 100.0 - (noise_raw / _MAX_NOISE) * 100.0))
+    tomtom_entry = signals.get("tomtom")
+    traffic_congestion = tomtom_entry[0].get("congestion") if tomtom_entry else None
+
     return {
         "quiet_score": round(score),
         "label": score_to_label(score),
-        "confidence": compute_confidence(
-            venue=venue,
-            profile=profile,
-            rt_row=rt_row,
-            slot_count=slot_count,
-            sig_score=sig_score,
-            user_avg=user_avg,
-        ),
+        "confidence": compute_confidence(venue=venue, profile=profile, signals=signals, slot_count=slot_count),
         "breakdown": {
-            "venue_traits": s,
-            "time_pattern": t,
+            "venue_traits":    s,
+            "time_pattern":    t,
             "live_adjustment": r,
             "traffic_penalty": tp,
         },
-        "traffic_congestion": rt_row.tomtom_traffic_congestion if rt_row else None,
+        "traffic_congestion": traffic_congestion,
     }
 
 
 def quiet_score(db: Session, venue: Venue, dt: datetime = None, include_realtime: bool = True) -> dict:
     dt = dt or datetime.now(_NYC_TZ)
-
-    profile          = get_hourly_profile(db, venue.id, dt.hour, dt.weekday())
-    rt_row           = get_latest_realtime(db, venue.id) if include_realtime else None
-    signal_count     = count_recent_signals(db, venue.id)
-    slot_count       = count_profile_slots(db, venue.id)
-    sig_score, user_avg = get_signal_metrics(db, venue.id, dt=dt)
+    profile    = get_hourly_profile(db, venue.id, dt.hour, dt.weekday())
+    signals    = get_latest_signals(db, venue.id) if include_realtime else {}
+    slot_count = count_profile_slots(db, venue.id)
     complaint_baseline = _get_complaint_baseline(venue.id) if include_realtime else 0.0
-
     s = static_score(venue)
-    t = temporal_score(db, profile, venue, dt, signal_count)
-    r, tp = realtime_score(venue, rt_row, profile, complaint_baseline) if include_realtime else (0.0, 0.0)
+    t = temporal_score(db, profile, venue, dt)
+    r, tp = realtime_score(venue, signals, complaint_baseline) if include_realtime else (0.0, 0.0)
 
-    return _build_score_dict(venue, profile, rt_row, slot_count, sig_score, user_avg, s, t, r, tp)
+    return _build_score_dict(venue, profile, signals, slot_count, s, t, r, tp)
 
 
-def quiet_score_from_data(venue: Venue, dt: datetime, profile, rt_row, slot_count: int, recent_signals: list, dow_signals: list, complaint_baseline: float) -> dict:
-    now = datetime.now(_NYC_TZ)
-    sig_score = _compute_signal_confidence(recent_signals, dow_signals, now)
-    user_avg  = _compute_user_avg(recent_signals, dow_signals, now)
+def quiet_score_from_data(venue: Venue, dt: datetime, profile, signals: Signals, slot_count: int, recent_signals: list, dow_signals: list, complaint_baseline: float) -> dict:
+    s  = static_score(venue)
+    t  = temporal_score_from_data(profile, venue, dt, recent_signals, dow_signals)
+    r, tp = realtime_score(venue, signals, complaint_baseline)
 
-    s = static_score(venue)
-    t = temporal_score_from_data(profile, venue, dt, recent_signals, dow_signals)
-    r, tp = realtime_score(venue, rt_row, profile, complaint_baseline)
-
-    return _build_score_dict(venue, profile, rt_row, slot_count, sig_score, user_avg, s, t, r, tp)
+    return _build_score_dict(venue, profile, signals, slot_count, s, t, r, tp)
